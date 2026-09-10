@@ -11,6 +11,9 @@ dependencies:
     local_changes: none
     owner: health-platform
     next_review: 2026-12-10
+    upstream_sync:
+      strategy: upgrade locked package after conformance tests pass
+      rollback: restore pyproject.toml and uv.lock from the prior known-good commit
   - name: open-wearables-withings-reference
     kind: source-reference
     repository: https://github.com/the-momentum/open-wearables
@@ -21,3 +24,6 @@ dependencies:
     local_changes: none-yet
     owner: health-platform
     next_review: 2026-12-10
+    upstream_sync:
+      strategy: review pinned source paths quarterly and cherry-pick intentionally
+      rollback: revert the attributed local adaptation while retaining raw fixtures

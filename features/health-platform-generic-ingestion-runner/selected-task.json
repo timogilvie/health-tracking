@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2976",
+  "title": "Health platform: generic ingestion runner",
+  "description": "Orchestrate raw-first sync, validation/dedup/upsert sinks, retries, overlap windows, auditing, state advancement, and offline replay.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-generic-ingestion-runner",
+  "contextPath": "features/health-platform-generic-ingestion-runner/selected-task.json",
+  "selectedAt": "2026-09-10T10:50:00-04:00"
+}

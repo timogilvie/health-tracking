@@ -30,4 +30,6 @@ Tests must use synthetic fixtures only.
 
 The open-source dependency decision is documented in
 [`docs/adr/0001-open-source-ingestion-foundation.md`](docs/adr/0001-open-source-ingestion-foundation.md).
+Dependency provenance, attribution, upgrades, rollback, and replacement criteria are enforced by
+[`docs/dependency-policy.md`](docs/dependency-policy.md) and `health policy-check`.
 # health-tracking

@@ -1,0 +1,20 @@
+{
+  "status": 0,
+  "body": {
+    "measuregrps": [
+      {
+        "grpid": 42001,
+        "date": 1789041600,
+        "measures": [
+          {
+            "type": 1,
+            "value": 82100,
+            "unit": -3
+          }
+        ]
+      }
+    ],
+    "more": 0,
+    "offset": 0
+  }
+}

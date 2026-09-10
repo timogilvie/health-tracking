@@ -11,6 +11,7 @@ import typer
 from health.config import HealthSettings, load_project_config
 from health.db import MigrationError, connect, migrate, migration_status
 from health.layout import initialize_layout
+from health.oss_policy import PolicyError, validate_repository_policy
 
 app = typer.Typer(no_args_is_help=True, help="Local-first personal health data platform.")
 RootOption = Annotated[
@@ -72,6 +73,23 @@ def doctor(root: RootOption = Path(".")) -> None:
         typer.echo(f"{'PASS' if passed else 'FAIL'} {name}: {detail}")
     if not all(passed for _, passed, _ in checks):
         raise typer.Exit(code=1)
+
+
+@app.command("policy-check")
+def policy_check(root: RootOption = Path(".")) -> None:
+    """Validate OSS licenses, provenance, attribution, and lockfile pins."""
+
+    try:
+        report = validate_repository_policy(root)
+    except (OSError, PolicyError) as exc:
+        typer.echo(f"FAIL policy: {exc}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        "PASS policy: "
+        f"{report.entries} entries, "
+        f"{report.packages_verified} locked package(s), "
+        f"{report.source_references_verified} source reference(s)"
+    )
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ dependencies = [
   "oura-ring==1.0.1",
   "pydantic>=2.11,<3",
   "pydantic-settings>=2.10,<3",
+  "pytz>=2025.2",
   "pyyaml>=6,<7",
   "typer>=0.16,<1",
 ]

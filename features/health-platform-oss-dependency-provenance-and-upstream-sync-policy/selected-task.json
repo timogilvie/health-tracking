@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2996",
+  "title": "Health platform: OSS dependency provenance and upstream-sync policy",
+  "description": "Enforce exact OSS provenance, compatible licenses, lockfile alignment, attribution, upgrade/rollback ownership, and credential-free connector conformance.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-oss-dependency-provenance-and-upstream-sync-policy",
+  "contextPath": "features/health-platform-oss-dependency-provenance-and-upstream-sync-policy/selected-task.json",
+  "selectedAt": "2026-09-10T11:00:00-04:00"
+}
