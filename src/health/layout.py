@@ -17,6 +17,7 @@ def initialize_layout(settings: HealthSettings) -> list[Path]:
         settings.raw,
         settings.exports,
         settings.snapshots,
+        settings.secrets,
     ):
         if not path.exists():
             path.mkdir(parents=True, mode=0o700)

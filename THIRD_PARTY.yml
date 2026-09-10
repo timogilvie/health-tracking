@@ -19,9 +19,10 @@ dependencies:
     repository: https://github.com/the-momentum/open-wearables
     reviewed_commit: 802862fa1ac08f165a897cb9adc4f4b312b08e5c
     license: MIT
-    usage: Candidate source for narrow Withings OAuth, RPC, schema, and fixture adaptation
-    copied_paths: []
-    local_changes: none-yet
+    usage: Reference source for narrow Withings OAuth envelope and rotating-token adaptation
+    copied_paths:
+      - src/health/connectors/withings/oauth.py
+    local_changes: Rewritten for local httpx injection, atomic filesystem secret storage, one-time state validation, sanitized errors, CLI diagnostics, and no service framework dependencies
     owner: health-platform
     next_review: 2026-12-10
     upstream_sync:

@@ -21,6 +21,24 @@ inspect another project directory.
 Real health data, credentials, local databases, exports, and snapshots are ignored by Git.
 Tests must use synthetic fixtures only.
 
+## Withings authorization
+
+Copy `.env.example` to `.env` and set the Withings client ID, client secret, redirect URI,
+and optional scope for your own Withings application. The secret is loaded only at runtime;
+`.env` and `data/secrets/` are ignored by Git.
+
+```bash
+uv run health auth withings
+# Or run the two steps separately:
+uv run health withings authorize-url
+uv run health withings exchange
+uv run health withings status
+```
+
+Open the first command's URL, then pass the callback's code and state to the hidden prompts
+in `exchange`. Each rotated access/refresh pair is stored together using a private,
+cross-process lock and atomic file replacement.
+
 ## Architecture invariants
 
 - Raw source bytes are durable before normalization or cursor advancement.

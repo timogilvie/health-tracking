@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +26,11 @@ class HealthSettings(BaseSettings):
     raw_dir: Path = Path("data/raw")
     export_dir: Path = Path("data/exports")
     snapshot_dir: Path = Path("data/snapshots")
+    secret_dir: Path = Path("data/secrets")
+    withings_client_id: str = ""
+    withings_client_secret: SecretStr = SecretStr("")
+    withings_redirect_uri: str = ""
+    withings_scope: str = "user.metrics"
 
     @field_validator("project_root", mode="before")
     @classmethod
@@ -56,6 +61,10 @@ class HealthSettings(BaseSettings):
     @property
     def snapshots(self) -> Path:
         return self.resolve(self.snapshot_dir)
+
+    @property
+    def secrets(self) -> Path:
+        return self.resolve(self.secret_dir)
 
 
 def load_yaml(path: Path) -> dict[str, Any]:

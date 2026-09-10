@@ -10,6 +10,7 @@ def test_settings_resolve_paths_against_root(tmp_path: Path) -> None:
 
     assert settings.database == tmp_path / "data" / "health.duckdb"
     assert settings.raw == tmp_path / "data" / "raw"
+    assert settings.secrets == tmp_path / "data" / "secrets"
 
 
 def test_load_project_config_reads_required_maps(tmp_path: Path) -> None:

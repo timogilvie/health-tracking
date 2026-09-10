@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2977",
+  "title": "Health platform: Withings OAuth",
+  "description": "Implement Withings OAuth credential flow, secure token persistence/refresh, configuration, and authentication diagnostics. Adapt only authorization URL, code exchange, and rotating refresh-token behavior from Open Wearables backend/app/services/providers/withings/oauth.py at commit 802862fa1ac08f165a897cb9adc4f4b312b08e5c; persist token pairs atomically; test interrupted and concurrent refresh without live credentials; retain MIT attribution and provenance.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-withings-oauth",
+  "contextPath": "features/health-platform-withings-oauth/selected-task.json",
+  "selectedAt": "2026-09-10T15:09:16Z"
+}

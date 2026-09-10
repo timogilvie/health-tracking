@@ -15,9 +15,11 @@ data/*.duckdb.wal
 data/raw/**
 data/exports/**
 data/snapshots/**
+data/secrets/**
 !data/raw/.gitkeep
 !data/exports/.gitkeep
 !data/snapshots/.gitkeep
+!data/secrets/.gitkeep
 
 # Only synthetic fixtures belong under tests/fixtures.
 tests/fixtures/private/**
