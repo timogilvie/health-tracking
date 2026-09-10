@@ -63,6 +63,18 @@ BODY_COMPOSITION_MEASURES: dict[int, MeasurementDefinition] = {
     ),
 }
 
+BLOOD_PRESSURE_MEASURES: dict[int, MeasurementDefinition] = {
+    9: MeasurementDefinition(
+        metric="diastolic_mmhg", unit="mmHg", plausible_min=30, plausible_max=200
+    ),
+    10: MeasurementDefinition(
+        metric="systolic_mmhg", unit="mmHg", plausible_min=50, plausible_max=300
+    ),
+    11: MeasurementDefinition(
+        metric="pulse_bpm", unit="bpm", plausible_min=25, plausible_max=250
+    ),
+}
+
 
 class WithingsMeasure(BaseModel):
     """Preserve a vendor measure and its base-10 exponent without scaling it."""
@@ -158,10 +170,10 @@ def _scale_measure(measure: WithingsMeasure) -> float:
 
 
 class WithingsMeasurementConnector:
-    """Fetch envelopes and normalize body measures; HOK-2980 adds blood pressure."""
+    """Fetch envelopes and normalize body-composition and blood-pressure records."""
 
     name = "withings"
-    transform_version = "withings-measurements-v2"
+    transform_version = "withings-measurements-v3"
 
     def __init__(
         self,
@@ -226,6 +238,13 @@ class WithingsMeasurementConnector:
                 group,
                 envelope.body.timezone,
             )
+            device = None
+            if group.deviceid:
+                device = {
+                    "manufacturer": "Withings",
+                    "model": group.model,
+                    "vendor_device_id": group.deviceid,
+                }
             for measure in group.measures:
                 definition = BODY_COMPOSITION_MEASURES.get(measure.type)
                 if definition is None:
@@ -243,13 +262,6 @@ class WithingsMeasurementConnector:
                     },
                     "quality_reasons": quality_reasons,
                 }
-                device = None
-                if group.deviceid:
-                    device = {
-                        "manufacturer": "Withings",
-                        "model": group.model,
-                        "vendor_device_id": group.deviceid,
-                    }
                 records.append(
                     NormalizedRecord(
                         record_type="observation",
@@ -273,4 +285,69 @@ class WithingsMeasurementConnector:
                         },
                     )
                 )
+            pressure_measures = {
+                measure_type: [
+                    measure for measure in group.measures if measure.type == measure_type
+                ]
+                for measure_type in BLOOD_PRESSURE_MEASURES
+            }
+            systolic = pressure_measures[10]
+            diastolic = pressure_measures[9]
+            if not systolic or not diastolic:
+                continue
+
+            systolic_value = _scale_measure(systolic[0])
+            diastolic_value = _scale_measure(diastolic[0])
+            pulse_value = (
+                _scale_measure(pressure_measures[11][0]) if pressure_measures[11] else None
+            )
+            quality_reasons = [*identity_reasons, *time_reasons]
+            values_by_type = {
+                9: diastolic_value,
+                10: systolic_value,
+                11: pulse_value,
+            }
+            for measure_type, measures in pressure_measures.items():
+                definition = BLOOD_PRESSURE_MEASURES[measure_type]
+                if len(measures) > 1:
+                    quality_reasons.append(f"duplicate_{definition.metric}")
+                value = values_by_type[measure_type]
+                if value is None:
+                    quality_reasons.append(f"missing_{definition.metric}")
+                elif not definition.plausible_min <= value <= definition.plausible_max:
+                    quality_reasons.append(f"implausible_{definition.metric}")
+            if systolic_value <= diastolic_value:
+                quality_reasons.append("systolic_not_above_diastolic")
+
+            records.append(
+                NormalizedRecord(
+                    record_type="blood_pressure",
+                    identity=f"{source_record_id}:blood_pressure",
+                    values={
+                        "measured_at": observed_at,
+                        "local_date": local_date,
+                        "systolic_mmhg": systolic_value,
+                        "diastolic_mmhg": diastolic_value,
+                        "pulse_bpm": pulse_value,
+                        "measurement_number": None,
+                        "source": self.name,
+                        "source_record_id": source_record_id,
+                        "source_group_id": source_record_id,
+                        "device": device,
+                        "context": None,
+                        "notes": None,
+                        "quality": "suspect" if quality_reasons else "valid",
+                        "transform_version": self.transform_version,
+                        "metadata": {
+                            "withings": {
+                                "grpid": group.grpid,
+                                "group": group.model_dump(mode="json"),
+                                "response": response_context,
+                            },
+                            "timezone": timezone_name,
+                            "quality_reasons": quality_reasons,
+                        },
+                    },
+                )
+            )
         return records

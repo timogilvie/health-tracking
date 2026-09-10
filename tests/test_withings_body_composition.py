@@ -82,7 +82,11 @@ def test_normalize_weight_and_body_composition_with_provenance(
         lambda _request: (_ for _ in ()).throw(AssertionError("replay must be offline")),
     )
 
-    records = list(connector.normalize(raw_ref, store))
+    records = [
+        record
+        for record in connector.normalize(raw_ref, store)
+        if record.record_type == "observation"
+    ]
 
     canonical_values = [
         (record.values["metric"], record.values["value"], record.values["unit"])
@@ -187,7 +191,7 @@ def test_runner_writes_observations_devices_and_replays_as_duplicates(
 
     sync = runner.sync(connector, start=START, end=NOW)
 
-    assert (sync.raw_count, sync.normalized_count, sync.inserted_count) == (2, 7, 7)
+    assert (sync.raw_count, sync.normalized_count, sync.inserted_count) == (2, 8, 8)
     with connect(database, read_only=True) as connection:
         observations = connection.execute(
             """
@@ -233,17 +237,18 @@ def test_runner_writes_observations_devices_and_replays_as_duplicates(
     assert all(row[4] == "valid" for row in observations)
     assert all(row[5] == "America/New_York" for row in observations)
     assert all(row[6].startswith("withings/") for row in observations)
-    assert all(row[7] == "withings-measurements-v2" for row in observations)
+    assert all(row[7] == "withings-measurements-v3" for row in observations)
     assert all(row[8] == str(sync.ingestion_run_id) for row in observations)
-    assert devices == [
-        ("Withings", "Body Comp", "synthetic-scale-device", "synthetic-scale-device")
-    ]
+    assert set(devices) == {
+        ("Withings", "Body Comp", "synthetic-scale-device", "synthetic-scale-device"),
+        ("Withings", "BPM Connect", "synthetic-bp-device", "synthetic-bp-device"),
+    }
     assert device_links == (1, 0)
 
     replay = runner.replay(connector, list(store.iter_refs("withings")))
 
-    assert replay.normalized_count == 7
-    assert replay.duplicate_count == 7
+    assert replay.normalized_count == 8
+    assert replay.duplicate_count == 8
     assert replay.inserted_count == 0
     with connect(database, read_only=True) as connection:
         assert connection.execute("SELECT count(*) FROM observations").fetchone()[0] == 7

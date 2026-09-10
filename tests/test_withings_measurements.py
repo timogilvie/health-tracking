@@ -143,8 +143,8 @@ def test_bounded_paginated_sync_persists_exact_envelopes_and_audit(
     assert result.requested_start == START
     assert result.requested_end == END
     assert result.raw_count == 2
-    assert result.normalized_count == 7
-    assert result.inserted_count == 7
+    assert result.normalized_count == 8
+    assert result.inserted_count == 8
     assert sink.refreshes == 1
     assert forms[0] == {
         "action": ["getmeas"],
@@ -195,7 +195,7 @@ def test_bounded_paginated_sync_persists_exact_envelopes_and_audit(
         watermark = connection.execute(
             "SELECT last_successful_end FROM source_sync_state"
         ).fetchone()[0]
-    assert audit == ("succeeded", START, END, 2, 7)
+    assert audit == ("succeeded", START, END, 2, 8)
     assert watermark == END
 
 

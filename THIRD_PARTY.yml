@@ -24,7 +24,7 @@ dependencies:
       - src/health/connectors/withings/oauth.py
       - src/health/connectors/withings/rpc.py
       - src/health/connectors/withings/measurements.py
-    local_changes: Rewritten for local httpx injection, raw-before-parse page yielding, project-owned canonical scaling/quality/device provenance and retry/overlap/audit behavior, bounded pagination, atomic filesystem secret storage, one-time state validation, sanitized errors, CLI diagnostics, and no service framework dependencies
+    local_changes: Rewritten for local httpx injection, raw-before-parse page yielding, project-owned canonical scaling and grouped blood-pressure normalization with quality/device provenance and retry/overlap/audit behavior, bounded pagination, atomic filesystem secret storage, one-time state validation, sanitized errors, CLI diagnostics, and no service framework dependencies
     owner: health-platform
     next_review: 2026-12-10
     upstream_sync:

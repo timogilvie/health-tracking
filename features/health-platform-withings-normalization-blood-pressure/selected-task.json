@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2980",
+  "title": "Health platform: Withings normalization — blood pressure",
+  "description": "Normalize Withings BP measurement groups into one blood_pressure row per event containing systolic, diastolic and pulse. Preserve repeated readings, provenance and raw linkage; support later session grouping. Plan: https://linear.app/hokusai/document/personal-health-data-platform-technical-build-plan-3c968e6f6129",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-withings-normalization-blood-pressure",
+  "contextPath": "features/health-platform-withings-normalization-blood-pressure/selected-task.json",
+  "selectedAt": "2026-09-10T16:30:25Z"
+}
