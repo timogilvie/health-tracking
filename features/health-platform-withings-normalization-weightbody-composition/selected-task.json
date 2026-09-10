@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2979",
+  "title": "Health platform: Withings normalization — weight/body composition",
+  "description": "Normalize immutable Withings measurement groups into canonical weight and body-composition observations with base-10 unit conversion, source/raw/run provenance, stable source record IDs, device resolution, timezone-aware local dates, quality flags, and vendor metadata preservation. The implementation must be replayable without provider access and distinguish inserts, updates, and overlap duplicates.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-withings-normalization-weightbody-composition",
+  "contextPath": "features/health-platform-withings-normalization-weightbody-composition/selected-task.json",
+  "selectedAt": "2026-09-10T16:15:58Z"
+}

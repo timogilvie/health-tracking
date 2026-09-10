@@ -44,7 +44,7 @@ class NoopSink:
         raw_ref: RawRef,
         ingestion_run_id: UUID,
     ) -> WriteDisposition:
-        raise AssertionError("HOK-2978 must not emit canonical records")
+        return WriteDisposition.INSERTED
 
     def refresh(self) -> None:
         self.refreshes += 1
@@ -143,7 +143,8 @@ def test_bounded_paginated_sync_persists_exact_envelopes_and_audit(
     assert result.requested_start == START
     assert result.requested_end == END
     assert result.raw_count == 2
-    assert result.normalized_count == 0
+    assert result.normalized_count == 7
+    assert result.inserted_count == 7
     assert sink.refreshes == 1
     assert forms[0] == {
         "action": ["getmeas"],
@@ -194,7 +195,7 @@ def test_bounded_paginated_sync_persists_exact_envelopes_and_audit(
         watermark = connection.execute(
             "SELECT last_successful_end FROM source_sync_state"
         ).fetchone()[0]
-    assert audit == ("succeeded", START, END, 2, 0)
+    assert audit == ("succeeded", START, END, 2, 7)
     assert watermark == END
 
 

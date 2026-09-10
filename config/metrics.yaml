@@ -1,6 +1,18 @@
 metrics:
   weight_kg:
     unit: kg
+  lean_mass_kg:
+    unit: kg
+  body_fat_pct:
+    unit: "%"
+  body_fat_mass_kg:
+    unit: kg
+  skeletal_muscle_mass_kg:
+    unit: kg
+  body_water_mass_kg:
+    unit: kg
+  bone_mass_kg:
+    unit: kg
   systolic_mmhg:
     unit: mmHg
   diastolic_mmhg:

@@ -7,8 +7,13 @@ used under the MIT License. See NOTICE.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import math
 from collections.abc import Callable, Iterable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -25,6 +30,38 @@ MEASURE_LIST_KEY = "measuregrps"
 # Narrow HOK-2978 scope: weight, body composition, blood pressure, and pulse.
 # The numeric IDs match Withings' getmeas contract and the reviewed upstream coverage map.
 MEASURE_TYPE_CODES = (1, 5, 6, 8, 9, 10, 11, 76, 77, 88)
+
+
+class MeasurementDefinition(BaseModel):
+    metric: str
+    unit: str
+    plausible_min: float
+    plausible_max: float
+
+
+BODY_COMPOSITION_MEASURES: dict[int, MeasurementDefinition] = {
+    1: MeasurementDefinition(
+        metric="weight_kg", unit="kg", plausible_min=20, plausible_max=500
+    ),
+    5: MeasurementDefinition(
+        metric="lean_mass_kg", unit="kg", plausible_min=5, plausible_max=300
+    ),
+    6: MeasurementDefinition(
+        metric="body_fat_pct", unit="%", plausible_min=1, plausible_max=75
+    ),
+    8: MeasurementDefinition(
+        metric="body_fat_mass_kg", unit="kg", plausible_min=0, plausible_max=300
+    ),
+    76: MeasurementDefinition(
+        metric="skeletal_muscle_mass_kg", unit="kg", plausible_min=0, plausible_max=250
+    ),
+    77: MeasurementDefinition(
+        metric="body_water_mass_kg", unit="kg", plausible_min=0, plausible_max=250
+    ),
+    88: MeasurementDefinition(
+        metric="bone_mass_kg", unit="kg", plausible_min=0, plausible_max=30
+    ),
+}
 
 
 class WithingsMeasure(BaseModel):
@@ -84,11 +121,47 @@ def parse_measurement_envelope(content: bytes) -> WithingsMeasurementEnvelope:
         raise WithingsPayloadError(MEASURE_ACTION, "measurement schema validation failed") from exc
 
 
+def _source_record_id(group: WithingsMeasureGroup) -> tuple[str, list[str]]:
+    if group.grpid is not None:
+        return str(group.grpid), []
+    document = json.dumps(group.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(document.encode()).hexdigest()[:24]
+    return f"missing-grpid:{group.date}:{digest}", ["missing_grpid"]
+
+
+def _timestamp_context(
+    group: WithingsMeasureGroup,
+    response_timezone: str | None,
+) -> tuple[datetime, str | None, date, list[str]]:
+    try:
+        observed_at = datetime.fromtimestamp(group.date, tz=UTC)
+    except (OSError, OverflowError, ValueError) as exc:
+        raise WithingsPayloadError(MEASURE_ACTION, "measurement timestamp is invalid") from exc
+    timezone_name = group.timezone or response_timezone
+    if timezone_name is None:
+        return observed_at, None, observed_at.date(), ["missing_timezone"]
+    try:
+        local_date = observed_at.astimezone(ZoneInfo(timezone_name)).date()
+    except (ValueError, ZoneInfoNotFoundError):
+        return observed_at, None, observed_at.date(), ["invalid_timezone"]
+    return observed_at, timezone_name, local_date, []
+
+
+def _scale_measure(measure: WithingsMeasure) -> float:
+    try:
+        value = float(Decimal(measure.value).scaleb(measure.unit))
+    except (InvalidOperation, OverflowError) as exc:
+        raise WithingsPayloadError(MEASURE_ACTION, "measurement cannot be scaled") from exc
+    if not math.isfinite(value):
+        raise WithingsPayloadError(MEASURE_ACTION, "measurement is not finite")
+    return value
+
+
 class WithingsMeasurementConnector:
-    """Fetch measurement envelopes; HOK-2979/2980 will add canonical records."""
+    """Fetch envelopes and normalize body measures; HOK-2980 adds blood pressure."""
 
     name = "withings"
-    transform_version = "withings-measurements-v1"
+    transform_version = "withings-measurements-v2"
 
     def __init__(
         self,
@@ -140,7 +213,64 @@ class WithingsMeasurementConnector:
         if not isinstance(http_status, int) or not 200 <= http_status < 300:
             return ()
         envelope = parse_measurement_envelope(raw_store.read(raw_ref))
-        if envelope.status != 0:
+        if envelope.status != 0 or envelope.body is None:
             return ()
-        # Raw ingestion is complete here. Later normalization issues replay these refs.
-        return ()
+        records: list[NormalizedRecord] = []
+        response_context = envelope.body.model_dump(
+            mode="json",
+            exclude={"measuregrps"},
+        )
+        for group in envelope.body.measuregrps:
+            source_record_id, identity_reasons = _source_record_id(group)
+            observed_at, timezone_name, local_date, time_reasons = _timestamp_context(
+                group,
+                envelope.body.timezone,
+            )
+            for measure in group.measures:
+                definition = BODY_COMPOSITION_MEASURES.get(measure.type)
+                if definition is None:
+                    continue
+                value = _scale_measure(measure)
+                quality_reasons = [*identity_reasons, *time_reasons]
+                if not definition.plausible_min <= value <= definition.plausible_max:
+                    quality_reasons.append("implausible_value")
+                metadata = {
+                    "withings": {
+                        "grpid": group.grpid,
+                        "group": group.model_dump(mode="json"),
+                        "measure": measure.model_dump(mode="json"),
+                        "response": response_context,
+                    },
+                    "quality_reasons": quality_reasons,
+                }
+                device = None
+                if group.deviceid:
+                    device = {
+                        "manufacturer": "Withings",
+                        "model": group.model,
+                        "vendor_device_id": group.deviceid,
+                    }
+                records.append(
+                    NormalizedRecord(
+                        record_type="observation",
+                        identity=f"{source_record_id}:{definition.metric}",
+                        values={
+                            "metric": definition.metric,
+                            "observed_at": observed_at,
+                            "value": value,
+                            "unit": definition.unit,
+                            "source": self.name,
+                            "source_record_id": source_record_id,
+                            "device": device,
+                            "original_metric": f"withings_meastype_{measure.type}",
+                            "original_value": float(measure.value),
+                            "original_unit": f"10^{measure.unit} {definition.unit}",
+                            "quality": "suspect" if quality_reasons else "valid",
+                            "timezone": timezone_name,
+                            "local_date": local_date,
+                            "transform_version": self.transform_version,
+                            "metadata": metadata,
+                        },
+                    )
+                )
+        return records
