@@ -1,0 +1,11 @@
+metrics:
+  weight_kg:
+    unit: kg
+  systolic_mmhg:
+    unit: mmHg
+  diastolic_mmhg:
+    unit: mmHg
+  heart_rate_bpm:
+    unit: bpm
+  hrv_rmssd_ms:
+    unit: ms

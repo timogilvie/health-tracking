@@ -1,0 +1,23 @@
+.DS_Store
+.env
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Personal health data and derived artifacts must never be committed.
+data/*.duckdb
+data/*.duckdb.wal
+data/raw/**
+data/exports/**
+data/snapshots/**
+!data/raw/.gitkeep
+!data/exports/.gitkeep
+!data/snapshots/.gitkeep
+
+# Only synthetic fixtures belong under tests/fixtures.
+tests/fixtures/private/**

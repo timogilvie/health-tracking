@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2974",
+  "title": "Health platform: DuckDB schema and migration runner",
+  "description": "Implement the canonical DuckDB schema, forward-only SQL migrations, constraints and indexes.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-duckdb-schema-and-migration-runner",
+  "contextPath": "features/health-platform-duckdb-schema-and-migration-runner/selected-task.json",
+  "selectedAt": "2026-09-10T10:22:27-04:00"
+}

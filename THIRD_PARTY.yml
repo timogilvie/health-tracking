@@ -1,0 +1,23 @@
+schema_version: 1
+dependencies:
+  - name: oura-ring
+    kind: package
+    version: 1.0.1
+    repository: https://github.com/hedgertronic/oura-ring
+    reviewed_commit: 691dc2e75e97b976772c6bed80ad6936e3dee438
+    license: MIT
+    usage: Oura v2 HTTP client and OAuth2 request primitives
+    copied_paths: []
+    local_changes: none
+    owner: health-platform
+    next_review: 2026-12-10
+  - name: open-wearables-withings-reference
+    kind: source-reference
+    repository: https://github.com/the-momentum/open-wearables
+    reviewed_commit: 802862fa1ac08f165a897cb9adc4f4b312b08e5c
+    license: MIT
+    usage: Candidate source for narrow Withings OAuth, RPC, schema, and fixture adaptation
+    copied_paths: []
+    local_changes: none-yet
+    owner: health-platform
+    next_review: 2026-12-10

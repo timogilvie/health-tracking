@@ -1,0 +1,5 @@
+metrics:
+  weight_kg: [withings, apple_health, manual]
+  blood_pressure: [withings, apple_health, manual]
+  sleep: [oura, eight_sleep, apple_health]
+  workouts: [manual, apple_health, oura]

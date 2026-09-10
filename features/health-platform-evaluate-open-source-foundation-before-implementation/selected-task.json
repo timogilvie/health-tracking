@@ -1,0 +1,17 @@
+{
+  "id": "34ea9fbb-003a-43da-bd88-71435ce3a26f",
+  "identifier": "HOK-2994",
+  "title": "Health platform: evaluate open-source foundation before implementation",
+  "url": "https://linear.app/hokusai/issue/HOK-2994/health-platform-evaluate-open-source-foundation-before-implementation",
+  "project": {
+    "id": "b080f4c0-57b2-4fe5-ad4b-0cbf755d3994",
+    "name": "Health tracking"
+  },
+  "priority": "High",
+  "state_at_selection": "Backlog",
+  "state_after_execution": "Done",
+  "selected_at": "2026-09-10T00:00:00-04:00",
+  "completed_at": "2026-09-10T09:43:20-04:00",
+  "artifact": "docs/adr/0001-open-source-ingestion-foundation.md",
+  "linear_document": "https://linear.app/hokusai/document/adr-0001-selective-open-source-reuse-for-health-ingestion-9fe9c4f12654"
+}

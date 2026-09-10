@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2973",
+  "title": "Health platform: repository/bootstrap/configuration",
+  "description": "Create the Python 3.12+ skeleton, uv dependencies, Typer CLI, configuration, open-source-ready notices, test harness, and initial layout.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-repositorybootstrapconfiguration",
+  "contextPath": "features/health-platform-repositorybootstrapconfiguration/selected-task.json",
+  "selectedAt": "2026-09-10T09:45:00-04:00"
+}
