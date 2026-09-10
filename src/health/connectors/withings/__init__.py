@@ -1,5 +1,10 @@
 """Withings authentication and connector components."""
 
+from health.connectors.withings.export import (
+    WithingsExportConnector,
+    WithingsExportError,
+    import_withings_export,
+)
 from health.connectors.withings.measurements import (
     MEASURE_TYPE_CODES,
     WithingsMeasure,
@@ -26,6 +31,8 @@ __all__ = [
     "AuthenticationStatus",
     "AuthorizationRequest",
     "WithingsAPIError",
+    "WithingsExportConnector",
+    "WithingsExportError",
     "WithingsMeasure",
     "WithingsMeasureGroup",
     "WithingsMeasurementConnector",
@@ -35,5 +42,6 @@ __all__ = [
     "WithingsOAuthError",
     "WithingsPaginationError",
     "WithingsPayloadError",
+    "import_withings_export",
     "parse_measurement_envelope",
 ]

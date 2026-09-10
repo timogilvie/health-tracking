@@ -70,6 +70,7 @@ def _extension(content_type: str) -> str:
         "application/xml": ".xml",
         "text/xml": ".xml",
         "application/zip": ".zip",
+        "text/csv": ".csv",
     }.get(normalized, ".bin")
 
 

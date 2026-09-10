@@ -15,12 +15,14 @@ from health.auth import FileSecretStore, OAuthStateError, SecretStoreError
 from health.config import HealthSettings, load_project_config
 from health.connectors.withings import (
     WithingsAPIError,
+    WithingsExportError,
     WithingsMeasurementConnector,
     WithingsOAuth,
     WithingsOAuthConfig,
     WithingsOAuthError,
     WithingsPaginationError,
     WithingsPayloadError,
+    import_withings_export,
 )
 from health.db import MigrationError, connect, migrate, migration_status
 from health.ingestion import (
@@ -38,9 +40,11 @@ app = typer.Typer(no_args_is_help=True, help="Local-first personal health data p
 auth_app = typer.Typer(no_args_is_help=True, help="Authorize provider accounts.")
 withings_app = typer.Typer(no_args_is_help=True, help="Manage Withings OAuth credentials.")
 sync_app = typer.Typer(no_args_is_help=True, help="Synchronize and inspect provider data.")
+import_app = typer.Typer(no_args_is_help=True, help="Import provider export files.")
 app.add_typer(auth_app, name="auth")
 app.add_typer(withings_app, name="withings")
 app.add_typer(sync_app, name="sync")
+app.add_typer(import_app, name="import")
 RootOption = Annotated[
     Path,
     typer.Option(
@@ -58,6 +62,15 @@ TimestampOption = Annotated[
 SourceOption = Annotated[
     str,
     typer.Option(help="Provider source to inspect."),
+]
+ExportPathArgument = Annotated[
+    Path,
+    typer.Argument(
+        exists=True,
+        readable=True,
+        resolve_path=True,
+        help="Withings export ZIP, extracted directory, or CSV file.",
+    ),
 ]
 
 
@@ -136,6 +149,7 @@ def _safe_sync_error(error: Exception) -> str:
         RetryableIngestionError,
         SecretStoreError,
         WithingsAPIError,
+        WithingsExportError,
         WithingsOAuthError,
         WithingsPaginationError,
         WithingsPayloadError,
@@ -278,6 +292,46 @@ def sync_withings(
         f"start={_iso(result.requested_start)} "
         f"end={_iso(result.requested_end)} "
         f"raw={result.raw_count} "
+        f"normalized={result.normalized_count} "
+        f"inserted={result.inserted_count} "
+        f"updated={result.updated_count} "
+        f"duplicate={result.duplicate_count}"
+    )
+
+
+@import_app.command("withings")
+def import_withings_command(
+    export_path: ExportPathArgument,
+    root: RootOption = Path("."),
+) -> None:
+    """Import a downloaded Withings ZIP or supported CSV without API access."""
+
+    settings = settings_for(root)
+    try:
+        project_config = _runtime_config(settings, require_directories=True)
+        timezone_name = project_config["settings"].get("timezone")
+        if not isinstance(timezone_name, str) or not timezone_name.strip():
+            raise WithingsExportError("settings.timezone must be an IANA timezone name")
+        raw_store = RawStore(settings.raw)
+        result = import_withings_export(
+            export_path,
+            timezone_name=timezone_name,
+            raw_store=raw_store,
+            runner=IngestionRunner(
+                database=settings.database,
+                raw_store=raw_store,
+                sink=DuckDBCanonicalSink(settings.database),
+            ),
+        )
+    except Exception as exc:
+        typer.echo(f"FAIL Withings export import: {_safe_sync_error(exc)}")
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        "PASS Withings export import: "
+        f"source={result.source} "
+        f"run_id={result.ingestion_run_id} "
+        f"files={result.raw_count} "
         f"normalized={result.normalized_count} "
         f"inserted={result.inserted_count} "
         f"updated={result.updated_count} "

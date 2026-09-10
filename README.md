@@ -41,6 +41,37 @@ cross-process lock and atomic file replacement.
 
 ## Withings synchronization
 
+### Manual account export
+
+Withings API access is optional. The offline importer accepts the ZIP delivered by Withings,
+an extracted export directory, or an individual supported CSV. It currently imports weight,
+fat mass, bone mass, muscle mass, hydration, and complete blood-pressure readings. Pound-based
+mass columns are converted to kilograms.
+
+In the Withings mobile app, open **Profile**, select **Settings**, choose **Export All Health
+Data**, select the user profile, and start the archive. Withings emails a download link when the
+archive is ready. See Withings' current instructions for
+[iOS](https://support.withings.com/hc/en-us/articles/360001399167-Withings-App-iOS-Exporting-your-data)
+or
+[Android](https://support.withings.com/hc/en-us/articles/31647944317201-Withings-App-Android-Exporting-your-data).
+
+Import the downloaded file directly; it does not need to be extracted or moved into the
+repository:
+
+```bash
+uv run health import withings ~/Downloads/withings-export.zip
+uv run health sync status --source withings
+```
+
+Naive CSV timestamps use `timezone` from `config/settings.yaml`. The original ZIP and each
+recognized CSV are retained in immutable raw storage, while unsupported export files are
+ignored. Re-importing the same archive is safe and reports canonical duplicates. File imports
+do not advance the API synchronization watermark, so API access can be enabled later without
+changing its normal lookback; use an explicit API `--start` if a historical API backfill is
+needed.
+
+### API synchronization
+
 After initialization and authorization, run the raw-first Withings pipeline with an optional
 bounded window. Timestamps must be ISO-8601 values with a timezone offset.
 
