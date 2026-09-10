@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2978",
+  "title": "Health platform: Withings measurement ingestion",
+  "description": "Fetch Withings measurement groups for weight, body composition, blood pressure, and pulse; persist every exact response envelope before parsing; support bounded historical sync through the generic runner's project-owned 72-hour overlap and watermark; preserve vendor IDs, pagination, timestamps, timezone, measurement type, unit/exponent, and grpid. Adapt only the narrow RPC, schema, and fixture seams from Open Wearables commit 802862fa1ac08f165a897cb9adc4f4b312b08e5c with MIT attribution.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-withings-measurement-ingestion",
+  "contextPath": "features/health-platform-withings-measurement-ingestion/selected-task.json",
+  "selectedAt": "2026-09-10T15:31:26Z"
+}

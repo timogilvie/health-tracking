@@ -1,0 +1,41 @@
+{
+  "status": 0,
+  "body": {
+    "updatetime": 1789041900,
+    "timezone": "America/New_York",
+    "measuregrps": [
+      {
+        "grpid": 42001,
+        "attrib": 0,
+        "date": 1789041600,
+        "created": 1789041660,
+        "category": 1,
+        "deviceid": "synthetic-scale-device",
+        "model": "Body Comp",
+        "timezone": "America/New_York",
+        "measures": [
+          {"type": 1, "value": 82100, "unit": -3, "position": 0},
+          {"type": 5, "value": 65400, "unit": -3, "position": 0},
+          {"type": 6, "value": 203, "unit": -1, "position": 0},
+          {"type": 8, "value": 16700, "unit": -3, "position": 0}
+        ]
+      },
+      {
+        "grpid": 42002,
+        "attrib": 0,
+        "date": 1789045200,
+        "category": 1,
+        "deviceid": "synthetic-bp-device",
+        "model": "BPM Connect",
+        "timezone": "America/New_York",
+        "measures": [
+          {"type": 9, "value": 78, "unit": 0, "position": 2},
+          {"type": 10, "value": 122, "unit": 0, "position": 1},
+          {"type": 11, "value": 61, "unit": 0, "position": 3}
+        ]
+      }
+    ],
+    "more": 1,
+    "offset": 2
+  }
+}

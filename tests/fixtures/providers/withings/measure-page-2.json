@@ -1,0 +1,24 @@
+{
+  "status": 0,
+  "body": {
+    "updatetime": 1789045500,
+    "timezone": "America/New_York",
+    "measuregrps": [
+      {
+        "grpid": 42003,
+        "attrib": 0,
+        "date": 1789045400,
+        "category": 1,
+        "deviceid": "synthetic-scale-device",
+        "model": "Body Comp",
+        "measures": [
+          {"type": 76, "value": 34200, "unit": -3},
+          {"type": 77, "value": 45100, "unit": -3},
+          {"type": 88, "value": 3200, "unit": -3}
+        ]
+      }
+    ],
+    "more": 0,
+    "offset": 2
+  }
+}

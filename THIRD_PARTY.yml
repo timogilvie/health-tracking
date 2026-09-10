@@ -22,7 +22,9 @@ dependencies:
     usage: Reference source for narrow Withings OAuth envelope and rotating-token adaptation
     copied_paths:
       - src/health/connectors/withings/oauth.py
-    local_changes: Rewritten for local httpx injection, atomic filesystem secret storage, one-time state validation, sanitized errors, CLI diagnostics, and no service framework dependencies
+      - src/health/connectors/withings/rpc.py
+      - src/health/connectors/withings/measurements.py
+    local_changes: Rewritten for local httpx injection, raw-before-parse page yielding, project-owned retry/overlap/audit behavior, bounded pagination, atomic filesystem secret storage, one-time state validation, sanitized errors, CLI diagnostics, and no service framework dependencies
     owner: health-platform
     next_review: 2026-12-10
     upstream_sync:
