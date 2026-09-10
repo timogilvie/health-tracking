@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2998",
+  "title": "Health platform: Withings sync CLI and live smoke-test readiness",
+  "description": "Expose the completed Withings vertical slice through health sync withings and a read-only local ingestion-status command. Support bounded windows, safe summaries, deterministic overlap verification, and documented live smoke-test readiness without exposing or committing personal data.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-withings-sync-cli-and-live-smoke-test-readiness",
+  "contextPath": "features/health-platform-withings-sync-cli-and-live-smoke-test-readiness/selected-task.json",
+  "selectedAt": "2026-09-10T17:11:09Z"
+}

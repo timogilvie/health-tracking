@@ -39,6 +39,37 @@ Open the first command's URL, then pass the callback's code and state to the hid
 in `exchange`. Each rotated access/refresh pair is stored together using a private,
 cross-process lock and atomic file replacement.
 
+## Withings synchronization
+
+After initialization and authorization, run the raw-first Withings pipeline with an optional
+bounded window. Timestamps must be ISO-8601 values with a timezone offset.
+
+```bash
+uv run health sync withings \
+  --start '2026-08-28T00:00:00-04:00' \
+  --end '2026-09-10T13:00:00-04:00'
+uv run health sync status --source withings
+```
+
+Without `--start`, the first sync uses `default_sync_lookback_days` from
+`config/settings.yaml`. Later syncs deliberately overlap the prior successful window by 72
+hours so delayed vendor changes can be updated. A successful command reports only the run ID,
+window, and raw/normalized/inserted/updated/duplicate counts; it does not print measurements.
+
+For a live smoke test, record the canonical row counts, run the same bounded command again,
+and confirm the second run is duplicate-heavy without unexplained row growth. A vendor record
+changed between requests may correctly appear as an update. `health sync status` reads only the
+local database, requires no credentials, and makes no provider request.
+
+Do not paste `.env`, token files, raw payloads, or measurement values into bug reports. Share
+only the run ID, requested window, counts, status, and sanitized error category. Confirm private
+artifacts remain ignored after a live run:
+
+```bash
+git status --short
+git check-ignore -v .env data/health.duckdb data/secrets/withings.tokens.json
+```
+
 ## Architecture invariants
 
 - Raw source bytes are durable before normalization or cursor advancement.
