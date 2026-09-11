@@ -166,6 +166,21 @@ High-confidence provenance, exact, and overlap matches are confirmed automatical
 heuristic matches remain review candidates. Resolution changes presentation selection only:
 every original source row remains in DuckDB, and rejected review decisions survive refreshes.
 
+## Laboratory results
+
+Use a long-format CSV with at least `Test Name` and `Result` columns. Optional columns include
+collection/result dates, unit, reference bounds or text range, flag, provider, and fasting status.
+Preview is the default and never writes data:
+
+```bash
+uv run health import labs ~/Downloads/lab-results.csv
+uv run health import labs ~/Downloads/lab-results.csv --commit
+```
+
+Aliases in `config/biomarkers.yaml` map common test names to the dashboard vocabulary. Unknown
+tests are retained with their original name and reported in the preview; they are never silently
+dropped. A committed CSV and all source columns remain in private immutable raw storage.
+
 ## Manual workouts
 
 Record resistance training with a shorthand designed for times when the Oura ring is removed.

@@ -168,6 +168,41 @@ class WorkoutPayload(BaseModel):
         return self
 
 
+class LabResultPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    collected_at: datetime | None = None
+    resulted_at: datetime | None = None
+    canonical_name: str | None = None
+    original_name: str = Field(min_length=1)
+    numeric_value: float | None = Field(default=None, allow_inf_nan=False)
+    text_value: str | None = None
+    unit: str | None = None
+    reference_low: float | None = Field(default=None, allow_inf_nan=False)
+    reference_high: float | None = Field(default=None, allow_inf_nan=False)
+    reference_text: str | None = None
+    abnormal_flag: str | None = None
+    provider: str | None = None
+    fasting: bool | None = None
+    source: str = Field(min_length=1)
+    source_record_id: str = Field(min_length=1)
+    transform_version: str = Field(min_length=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("collected_at", "resulted_at")
+    @classmethod
+    def timestamps_are_aware(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("lab timestamps must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def has_one_result_value(self) -> LabResultPayload:
+        if self.numeric_value is None and not self.text_value:
+            raise ValueError("lab result must have a numeric or text value")
+        return self
+
+
 class EventPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -276,6 +311,7 @@ class DuckDBCanonicalSink:
                 | BloodPressurePayload
                 | SleepSessionPayload
                 | WorkoutPayload
+                | LabResultPayload
                 | EventPayload
             ) = (
                 ObservationPayload.model_validate(record.values)
@@ -286,6 +322,8 @@ class DuckDBCanonicalSink:
             payload = SleepSessionPayload.model_validate(record.values)
         elif record.record_type == "workout":
             payload = WorkoutPayload.model_validate(record.values)
+        elif record.record_type == "lab_result":
+            payload = LabResultPayload.model_validate(record.values)
         elif record.record_type == "event":
             payload = EventPayload.model_validate(record.values)
         else:
@@ -318,6 +356,13 @@ class DuckDBCanonicalSink:
                     disposition = self._write_workout(
                         connection,
                         workout=payload,
+                        raw_ref=raw_ref,
+                        ingestion_run_id=ingestion_run_id,
+                    )
+                elif isinstance(payload, LabResultPayload):
+                    disposition = self._write_lab_result(
+                        connection,
+                        lab_result=payload,
                         raw_ref=raw_ref,
                         ingestion_run_id=ingestion_run_id,
                     )
@@ -794,6 +839,112 @@ class DuckDBCanonicalSink:
                 workout.notes,
                 raw_ref.value,
                 workout.transform_version,
+                json.dumps(metadata, sort_keys=True),
+            ],
+        )
+        return WriteDisposition.INSERTED
+
+    def _write_lab_result(
+        self,
+        connection: duckdb.DuckDBPyConnection,
+        *,
+        lab_result: LabResultPayload,
+        raw_ref: RawRef,
+        ingestion_run_id: UUID,
+    ) -> WriteDisposition:
+        source_id = _source_id(connection, lab_result.source)
+        existing = connection.execute(
+            """
+            SELECT lab_result_id, collected_at, resulted_at, canonical_name,
+                   original_name, numeric_value, text_value, unit, reference_low,
+                   reference_high, reference_text, abnormal_flag, provider, fasting,
+                   transform_version, metadata
+            FROM lab_results
+            WHERE source_id = ? AND source_record_id = ?
+            """,
+            [source_id, lab_result.source_record_id],
+        ).fetchone()
+        metadata = {**lab_result.metadata, "ingestion_run_id": str(ingestion_run_id)}
+        semantic = (
+            lab_result.collected_at,
+            lab_result.resulted_at,
+            lab_result.canonical_name,
+            lab_result.original_name,
+            lab_result.numeric_value,
+            lab_result.text_value,
+            lab_result.unit,
+            lab_result.reference_low,
+            lab_result.reference_high,
+            lab_result.reference_text,
+            lab_result.abnormal_flag,
+            lab_result.provider,
+            lab_result.fasting,
+            lab_result.transform_version,
+            lab_result.metadata,
+        )
+        if existing is not None:
+            existing_metadata = _metadata(existing[15])
+            existing_metadata.pop("ingestion_run_id", None)
+            if (*existing[1:15], existing_metadata) == semantic:
+                return WriteDisposition.DUPLICATE
+            connection.execute(
+                """
+                UPDATE lab_results
+                SET collected_at = ?, resulted_at = ?, canonical_name = ?,
+                    original_name = ?, numeric_value = ?, text_value = ?, unit = ?,
+                    reference_low = ?, reference_high = ?, reference_text = ?,
+                    abnormal_flag = ?, provider = ?, fasting = ?, raw_file = ?,
+                    transform_version = ?, metadata = ?, ingested_at = current_timestamp
+                WHERE lab_result_id = ?
+                """,
+                [
+                    lab_result.collected_at,
+                    lab_result.resulted_at,
+                    lab_result.canonical_name,
+                    lab_result.original_name,
+                    lab_result.numeric_value,
+                    lab_result.text_value,
+                    lab_result.unit,
+                    lab_result.reference_low,
+                    lab_result.reference_high,
+                    lab_result.reference_text,
+                    lab_result.abnormal_flag,
+                    lab_result.provider,
+                    lab_result.fasting,
+                    raw_ref.value,
+                    lab_result.transform_version,
+                    json.dumps(metadata, sort_keys=True),
+                    existing[0],
+                ],
+            )
+            return WriteDisposition.UPDATED
+        connection.execute(
+            """
+            INSERT INTO lab_results (
+                collected_at, resulted_at, canonical_name, original_name,
+                numeric_value, text_value, unit, reference_low, reference_high,
+                reference_text, abnormal_flag, provider, fasting, source_id,
+                source_record_id, raw_file, transform_version, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                lab_result.collected_at,
+                lab_result.resulted_at,
+                lab_result.canonical_name,
+                lab_result.original_name,
+                lab_result.numeric_value,
+                lab_result.text_value,
+                lab_result.unit,
+                lab_result.reference_low,
+                lab_result.reference_high,
+                lab_result.reference_text,
+                lab_result.abnormal_flag,
+                lab_result.provider,
+                lab_result.fasting,
+                source_id,
+                lab_result.source_record_id,
+                raw_ref.value,
+                lab_result.transform_version,
                 json.dumps(metadata, sort_keys=True),
             ],
         )

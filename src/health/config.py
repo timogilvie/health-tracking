@@ -93,5 +93,5 @@ def load_project_config(settings: HealthSettings) -> dict[str, dict[str, Any]]:
 
     return {
         name: load_yaml(settings.configs / f"{name}.yaml")
-        for name in ("settings", "metrics", "source_priority")
+        for name in ("settings", "metrics", "source_priority", "biomarkers")
     }

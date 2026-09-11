@@ -15,6 +15,12 @@ import typer
 from health.auth import FileSecretStore, OAuthStateError, SecretStoreError
 from health.config import HealthSettings, load_project_config
 from health.connectors.apple_health import AppleHealthExportError, import_apple_health_export
+from health.connectors.labs import (
+    LabImportError,
+    import_lab_csv,
+    load_biomarker_vocabulary,
+    preview_lab_csv,
+)
 from health.connectors.oura import (
     OuraAPIError,
     OuraConnector,
@@ -195,6 +201,7 @@ def _safe_sync_error(error: Exception) -> str:
     safe_errors = (
         AppleHealthExportError,
         DuplicateResolutionError,
+        LabImportError,
         MigrationError,
         ManualWorkoutError,
         OuraAPIError,
@@ -782,6 +789,62 @@ def import_apple_health_command(
         f"normalized={result.normalized_count} "
         f"inserted={result.inserted_count} "
         f"updated={result.updated_count} "
+        f"duplicate={result.duplicate_count}"
+    )
+
+
+@import_app.command("labs")
+def import_labs_command(
+    export_path: ExportPathArgument,
+    commit: Annotated[
+        bool,
+        typer.Option("--commit", help="Write validated results; omit for a safe preview."),
+    ] = False,
+    root: RootOption = Path("."),
+) -> None:
+    """Preview or import standardized long-format laboratory CSV results."""
+
+    settings = settings_for(root)
+    try:
+        project_config = _runtime_config(settings, require_directories=commit)
+        timezone_name = project_config["settings"].get("timezone")
+        if not isinstance(timezone_name, str) or not timezone_name.strip():
+            raise LabImportError("settings.timezone must be an IANA timezone name")
+        vocabulary = load_biomarker_vocabulary(project_config["biomarkers"])
+        preview = preview_lab_csv(
+            export_path,
+            vocabulary=vocabulary,
+            timezone_name=timezone_name,
+        )
+        unknown = ", ".join(preview.unknown) or "none"
+        if not commit:
+            typer.echo(
+                "PASS Lab import preview: "
+                f"rows={preview.rows} recognized={preview.recognized} "
+                f"unknown={len(preview.unknown)} unknown_names={unknown}"
+            )
+            typer.echo("No data written; rerun with --commit to import.")
+            return
+        raw_store = RawStore(settings.raw)
+        result = import_lab_csv(
+            export_path,
+            vocabulary=vocabulary,
+            timezone_name=timezone_name,
+            raw_store=raw_store,
+            runner=IngestionRunner(
+                database=settings.database,
+                raw_store=raw_store,
+                sink=DuckDBCanonicalSink(settings.database),
+            ),
+        )
+    except Exception as exc:
+        typer.echo(f"FAIL Lab import: {_safe_sync_error(exc)}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        "PASS Lab import: "
+        f"run_id={result.ingestion_run_id} rows={result.normalized_count} "
+        f"recognized={preview.recognized} unknown={len(preview.unknown)} "
+        f"inserted={result.inserted_count} updated={result.updated_count} "
         f"duplicate={result.duplicate_count}"
     )
 

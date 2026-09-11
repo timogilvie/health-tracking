@@ -19,6 +19,7 @@ def test_load_project_config_reads_required_maps(tmp_path: Path) -> None:
     (config / "settings.yaml").write_text("timezone: UTC\n", encoding="utf-8")
     (config / "metrics.yaml").write_text("metrics: {}\n", encoding="utf-8")
     (config / "source_priority.yaml").write_text("metrics: {}\n", encoding="utf-8")
+    (config / "biomarkers.yaml").write_text("biomarkers: {}\n", encoding="utf-8")
 
     loaded = load_project_config(HealthSettings(project_root=tmp_path))
 

@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2990",
+  "title": "Health platform: lab importer and biomarker vocabulary",
+  "description": "Implement safe CSV preview and validation, explicit long-format import, canonical biomarker aliases, unknown-test retention, and source/reference-range provenance.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-lab-importer-biomarker-vocabulary",
+  "contextPath": "features/health-platform-lab-importer-biomarker-vocabulary/selected-task.json",
+  "selectedAt": "2026-09-11T16:04:44Z"
+}

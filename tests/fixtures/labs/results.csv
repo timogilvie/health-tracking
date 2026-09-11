@@ -1,0 +1,5 @@
+Collected At,Resulted At,Test Name,Result,Unit,Reference Range,Flag,Provider,Fasting
+2026-09-08,2026-09-09,HbA1c,5.1,%,4.0-5.6,normal,Synthetic Lab,yes
+2026-09-08,2026-09-09,LDL-C,92,mg/dL,<100,normal,Synthetic Lab,yes
+2026-09-08,2026-09-09,Apolipoprotein B,72,mg/dL,<90,normal,Synthetic Lab,yes
+2026-09-08,2026-09-09,Appearance,Clear,,Clear,normal,Synthetic Lab,no
