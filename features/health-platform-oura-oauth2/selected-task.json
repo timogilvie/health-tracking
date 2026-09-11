@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2982",
+  "title": "Health platform: Oura OAuth2",
+  "description": "Implement Oura OAuth2 Authorization Code flow, secure refresh-token handling, configuration, and auth diagnostics. Use oura-ring==1.0.1 for authorization URL, code exchange, and refresh requests while keeping credential storage, CSRF state, callback UX, atomic rotating-token persistence, retries, and refresh locking project-owned.",
+  "labels": [],
+  "state": "Backlog",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-oura-oauth2",
+  "contextPath": "features/health-platform-oura-oauth2/selected-task.json",
+  "selectedAt": "2026-09-11T14:07:30Z"
+}

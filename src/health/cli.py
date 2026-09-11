@@ -13,6 +13,7 @@ import typer
 
 from health.auth import FileSecretStore, OAuthStateError, SecretStoreError
 from health.config import HealthSettings, load_project_config
+from health.connectors.oura import OuraOAuth, OuraOAuthConfig, OuraOAuthError
 from health.connectors.withings import (
     WithingsAPIError,
     WithingsExportError,
@@ -40,10 +41,12 @@ from health.transforms import source_priority_rows, sync_source_priorities
 app = typer.Typer(no_args_is_help=True, help="Local-first personal health data platform.")
 auth_app = typer.Typer(no_args_is_help=True, help="Authorize provider accounts.")
 withings_app = typer.Typer(no_args_is_help=True, help="Manage Withings OAuth credentials.")
+oura_app = typer.Typer(no_args_is_help=True, help="Manage Oura OAuth credentials.")
 sync_app = typer.Typer(no_args_is_help=True, help="Synchronize and inspect provider data.")
 import_app = typer.Typer(no_args_is_help=True, help="Import provider export files.")
 app.add_typer(auth_app, name="auth")
 app.add_typer(withings_app, name="withings")
+app.add_typer(oura_app, name="oura")
 app.add_typer(sync_app, name="sync")
 app.add_typer(import_app, name="import")
 RootOption = Annotated[
@@ -89,6 +92,18 @@ def withings_oauth(settings: HealthSettings, client: httpx.Client) -> WithingsOA
         ),
         secret_store=FileSecretStore(settings.secrets),
         client=client,
+    )
+
+
+def oura_oauth(settings: HealthSettings) -> OuraOAuth:
+    return OuraOAuth(
+        config=OuraOAuthConfig(
+            client_id=settings.oura_client_id,
+            client_secret=settings.oura_client_secret.get_secret_value(),
+            redirect_uri=settings.oura_redirect_uri,
+            scope=settings.oura_scope,
+        ),
+        secret_store=FileSecretStore(settings.secrets),
     )
 
 
@@ -150,6 +165,7 @@ def _sync_window_policy(project_config: dict[str, dict[str, Any]]) -> SyncWindow
 def _safe_sync_error(error: Exception) -> str:
     safe_errors = (
         MigrationError,
+        OuraOAuthError,
         RawStorageError,
         RetryableIngestionError,
         SecretStoreError,
@@ -181,6 +197,13 @@ def exchange_withings_from_prompt(service: WithingsOAuth) -> None:
     state = typer.prompt("Returned state", hide_input=True)
     tokens = service.exchange_code(code, state)
     typer.echo(f"PASS Withings authorized; token expires at {tokens.expires_at.isoformat()}")
+
+
+def exchange_oura_from_prompt(service: OuraOAuth) -> None:
+    code = typer.prompt("Authorization code", hide_input=True)
+    state = typer.prompt("Returned state", hide_input=True)
+    tokens = service.exchange_code(code, state)
+    typer.echo(f"PASS Oura authorized; token expires at {tokens.expires_at.isoformat()}")
 
 
 @app.command("init")
@@ -514,6 +537,71 @@ def withings_status(root: RootOption = Path(".")) -> None:
     expiry = status.expires_at.isoformat() if status.expires_at else "none"
     typer.echo(
         f"{'PASS' if status.token_state == 'valid' else 'FAIL'} Withings tokens: "
+        f"state={status.token_state}, expires_at={expiry}"
+    )
+    if not status.configured or status.token_state != "valid":
+        raise typer.Exit(code=1)
+
+
+@oura_app.command("authorize-url")
+def oura_authorize_url(root: RootOption = Path(".")) -> None:
+    """Start Oura OAuth and print the URL to open in a browser."""
+
+    settings = settings_for(root)
+    try:
+        request = oura_oauth(settings).begin_authorization()
+    except (OSError, SecretStoreError, OuraOAuthError) as exc:
+        typer.echo(f"FAIL Oura authorization: {exc}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(request.url)
+    typer.echo("OAuth state saved locally for 15 minutes.")
+
+
+@oura_app.command("exchange")
+def oura_exchange(root: RootOption = Path(".")) -> None:
+    """Exchange an Oura callback code and persist the rotated token pair."""
+
+    settings = settings_for(root)
+    try:
+        exchange_oura_from_prompt(oura_oauth(settings))
+    except (OSError, OAuthStateError, SecretStoreError, OuraOAuthError) as exc:
+        typer.echo(f"FAIL Oura token exchange: {exc}")
+        raise typer.Exit(code=1) from exc
+
+
+@auth_app.command("oura")
+def auth_oura(root: RootOption = Path(".")) -> None:
+    """Run the complete Oura OAuth flow from the terminal."""
+
+    settings = settings_for(root)
+    service = oura_oauth(settings)
+    try:
+        request = service.begin_authorization()
+        typer.echo(request.url)
+        typer.echo("Complete authorization in the browser, then enter the callback values.")
+        exchange_oura_from_prompt(service)
+    except (OSError, OAuthStateError, SecretStoreError, OuraOAuthError) as exc:
+        typer.echo(f"FAIL Oura authorization: {exc}")
+        raise typer.Exit(code=1) from exc
+
+
+@oura_app.command("status")
+def oura_status(root: RootOption = Path(".")) -> None:
+    """Report Oura configuration and token health without revealing secrets."""
+
+    settings = settings_for(root)
+    try:
+        status = oura_oauth(settings).status()
+    except (OSError, SecretStoreError) as exc:
+        typer.echo(f"FAIL Oura credentials: {exc}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        f"{'PASS' if status.configured else 'FAIL'} Oura configuration: "
+        f"{'complete' if status.configured else status.detail}"
+    )
+    expiry = status.expires_at.isoformat() if status.expires_at else "none"
+    typer.echo(
+        f"{'PASS' if status.token_state == 'valid' else 'FAIL'} Oura tokens: "
         f"state={status.token_state}, expires_at={expiry}"
     )
     if not status.configured or status.token_state != "valid":

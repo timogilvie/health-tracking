@@ -31,6 +31,10 @@ class HealthSettings(BaseSettings):
     withings_client_secret: SecretStr = SecretStr("")
     withings_redirect_uri: str = ""
     withings_scope: str = "user.metrics"
+    oura_client_id: str = ""
+    oura_client_secret: SecretStr = SecretStr("")
+    oura_redirect_uri: str = ""
+    oura_scope: str = "daily heartrate workout session"
 
     @field_validator("project_root", mode="before")
     @classmethod

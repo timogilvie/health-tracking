@@ -72,6 +72,43 @@ def test_withings_status_does_not_print_configuration_secret(tmp_path: Path) -> 
     assert "never-print-this" not in result.output
 
 
+def test_oura_status_does_not_print_configuration_secret(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["oura", "status", "--root", str(tmp_path)],
+        env={
+            "HEALTH_OURA_CLIENT_ID": "synthetic-client",
+            "HEALTH_OURA_CLIENT_SECRET": "never-print-this",
+            "HEALTH_OURA_REDIRECT_URI": "http://localhost:8765/callback",
+        },
+    )
+
+    assert result.exit_code == 1
+    assert "PASS Oura configuration: complete" in result.output
+    assert "state=missing" in result.output
+    assert "never-print-this" not in result.output
+
+
+def test_oura_exchange_prompts_hide_callback_values(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["oura", "exchange", "--root", str(tmp_path)],
+        input="synthetic-code\nsynthetic-state\n",
+        env={
+            "HEALTH_OURA_CLIENT_ID": "synthetic-client",
+            "HEALTH_OURA_CLIENT_SECRET": "never-print-this",
+            "HEALTH_OURA_REDIRECT_URI": "http://localhost:8765/callback",
+        },
+    )
+
+    assert result.exit_code == 1
+    assert "Authorization code" in result.output
+    assert "Returned state" in result.output
+    assert "synthetic-code" not in result.output
+    assert "synthetic-state" not in result.output
+    assert "never-print-this" not in result.output
+
+
 def test_withings_exchange_prompts_hide_callback_values(tmp_path: Path) -> None:
     result = runner.invoke(
         app,

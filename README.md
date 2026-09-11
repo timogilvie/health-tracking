@@ -21,6 +21,27 @@ inspect another project directory.
 Real health data, credentials, local databases, exports, and snapshots are ignored by Git.
 Tests must use synthetic fixtures only.
 
+## Oura authorization
+
+Create an OAuth application in the [Oura developer portal](https://developer.ouraring.com),
+register its exact callback URI, and set the corresponding `HEALTH_OURA_*` values from
+`.env.example`. The default scopes are the minimum needed by the MVP: `daily`, `heartrate`,
+`workout`, and `session`. New integrations use the server-side authorization-code flow rather
+than deprecated personal access tokens; see Oura's
+[OAuth documentation](https://cloud.ouraring.com/docs/authentication).
+
+```bash
+uv run health auth oura
+# Or run the two steps separately:
+uv run health oura authorize-url
+uv run health oura exchange
+uv run health oura status
+```
+
+Open the authorization URL, approve the requested scopes, then copy the callback's `code` and
+`state` values into the hidden prompts. Oura refresh tokens are single-use; refresh is serialized
+under a provider lock and the new access/refresh pair is persisted atomically.
+
 ## Withings authorization
 
 Copy `.env.example` to `.env` and set the Withings client ID, client secret, redirect URI,
