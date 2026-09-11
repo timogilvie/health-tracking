@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Baseline — Private health ledger</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to health trends</a>
+    <div class="paper-noise" aria-hidden="true"></div>
+
+    <header class="masthead">
+      <a class="wordmark" href="#overview" aria-label="Baseline dashboard home">
+        <span class="wordmark-mark">B/</span>
+        <span>Baseline</span>
+      </a>
+      <nav class="section-nav" aria-label="Dashboard sections">
+        <a href="#weight">Weight</a>
+        <a href="#bp">BP</a>
+        <a href="#sleep">Sleep</a>
+        <a href="#exercise">Exercise</a>
+        <a href="#labs">Labs</a>
+      </nav>
+      <div class="privacy-stamp">
+        <span class="pulse-dot" aria-hidden="true"></span>
+        Local only
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="overview" aria-labelledby="overview-title">
+        <div class="hero-copy">
+          <p class="folio">Private health ledger · <span id="latest-date">loading</span></p>
+          <h1 id="overview-title">Your body,<br><em>read over time.</em></h1>
+          <p class="hero-note">
+            A quiet record of signals—not scores. Look for direction, context, and the long arc.
+          </p>
+        </div>
+        <div class="range-panel">
+          <span class="range-label">Viewing window</span>
+          <div class="range-switch" role="group" aria-label="Trend time range">
+            <button type="button" data-days="7">7D</button>
+            <button type="button" data-days="30">30D</button>
+            <button type="button" data-days="90">90D</button>
+            <button type="button" data-days="365" aria-pressed="true">1Y</button>
+          </div>
+          <p id="data-status" class="data-status" role="status" aria-live="polite">
+            Reading the local ledger…
+          </p>
+        </div>
+      </section>
+
+      <section class="signal-board" aria-label="Latest health signals">
+        <article class="signal signal-primary">
+          <span class="signal-index">01</span>
+          <p>Weight</p>
+          <strong id="summary-weight">—</strong>
+          <small id="summary-weight-date">No reading</small>
+        </article>
+        <article class="signal">
+          <span class="signal-index">02</span>
+          <p>Blood pressure</p>
+          <strong id="summary-bp">—</strong>
+          <small id="summary-bp-date">No reading</small>
+        </article>
+        <article class="signal">
+          <span class="signal-index">03</span>
+          <p>Resting heart rate</p>
+          <strong id="summary-rhr">—</strong>
+          <small id="summary-rhr-date">No reading</small>
+        </article>
+        <article class="signal">
+          <span class="signal-index">04</span>
+          <p>HRV</p>
+          <strong id="summary-hrv">—</strong>
+          <small id="summary-hrv-date">No reading</small>
+        </article>
+        <article class="signal signal-wide">
+          <span class="signal-index">05</span>
+          <p>Last sleep</p>
+          <strong id="summary-sleep">—</strong>
+          <small id="summary-sleep-date">No reading</small>
+        </article>
+      </section>
+
+      <section class="ledger-section" id="weight" aria-labelledby="weight-title">
+        <header class="section-heading">
+          <div>
+            <span class="section-number">I</span>
+            <p class="eyebrow">Mass & composition</p>
+            <h2 id="weight-title">Weight</h2>
+          </div>
+          <p>Daily readings with the preferred source selected. Gaps remain gaps.</p>
+        </header>
+        <div class="chart-frame chart-weight">
+          <div class="chart-meta">
+            <span>kg</span>
+            <span id="weight-change">Not enough data for change</span>
+          </div>
+          <div id="weight-chart" class="line-chart" aria-label="Weight trend"></div>
+        </div>
+        <div id="weight-windows" class="window-strip" aria-label="Weight rolling averages"></div>
+      </section>
+
+      <section class="ledger-section ink-section" id="bp" aria-labelledby="bp-title">
+        <header class="section-heading">
+          <div>
+            <span class="section-number">II</span>
+            <p class="eyebrow">Pressure</p>
+            <h2 id="bp-title">Blood pressure</h2>
+          </div>
+          <p>Preferred session readings, shown as systolic over diastolic—not a diagnosis.</p>
+        </header>
+        <div class="legend" aria-label="Blood pressure chart legend">
+          <span><i class="legend-line systolic"></i>Systolic</span>
+          <span><i class="legend-line diastolic"></i>Diastolic</span>
+        </div>
+        <div id="bp-chart" class="line-chart dual-chart" aria-label="Blood pressure trend"></div>
+        <div id="bp-windows" class="window-strip inverse" aria-label="Blood pressure rolling averages"></div>
+      </section>
+
+      <section class="ledger-section" id="sleep" aria-labelledby="sleep-title">
+        <header class="section-heading">
+          <div>
+            <span class="section-number">III</span>
+            <p class="eyebrow">Recovery</p>
+            <h2 id="sleep-title">Sleep & pulse</h2>
+          </div>
+          <p>Sleep is assigned to wake date. Overnight HR and HRV stay alongside the night.</p>
+        </header>
+        <div class="recovery-grid">
+          <article class="recovery-feature">
+            <div class="moon-disc" aria-hidden="true"></div>
+            <p class="eyebrow">Duration</p>
+            <strong id="sleep-window-average">—</strong>
+            <span>average in selected window</span>
+            <div id="sleep-chart" class="line-chart compact" aria-label="Sleep duration trend"></div>
+          </article>
+          <article class="recovery-chart-card">
+            <div class="mini-heading"><span>Resting HR</span><b id="rhr-average">—</b></div>
+            <div id="rhr-chart" class="line-chart mini" aria-label="Resting heart-rate trend"></div>
+          </article>
+          <article class="recovery-chart-card">
+            <div class="mini-heading"><span>HRV</span><b id="hrv-average">—</b></div>
+            <div id="hrv-chart" class="line-chart mini" aria-label="Heart-rate variability trend"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="ledger-section exercise-section" id="exercise" aria-labelledby="exercise-title">
+        <header class="section-heading">
+          <div>
+            <span class="section-number">IV</span>
+            <p class="eyebrow">Work</p>
+            <h2 id="exercise-title">Exercise</h2>
+          </div>
+          <p>Manual lifting leads source selection; Oura and Apple records remain preserved beneath it.</p>
+        </header>
+        <div class="exercise-totals">
+          <div><span>Resistance</span><strong id="resistance-total">—</strong></div>
+          <div><span>Cardio</span><strong id="cardio-total">—</strong></div>
+          <div><span>Steps / known day</span><strong id="steps-average">—</strong></div>
+        </div>
+        <div id="exercise-chart" class="bar-chart" aria-label="Weekly exercise minutes"></div>
+        <div class="bar-legend"><span><i class="resistance-bar"></i>Resistance</span><span><i class="cardio-bar"></i>Cardio</span></div>
+      </section>
+
+      <section class="ledger-section" id="labs" aria-labelledby="labs-title">
+        <header class="section-heading">
+          <div>
+            <span class="section-number">V</span>
+            <p class="eyebrow">Clinical record</p>
+            <h2 id="labs-title">Labs</h2>
+          </div>
+          <p>Latest imported results. Reference intervals remain source-specific.</p>
+        </header>
+        <div class="table-shell">
+          <table>
+            <thead><tr><th>Marker</th><th>Result</th><th>Reference</th><th>Date</th></tr></thead>
+            <tbody id="labs-body"></tbody>
+          </table>
+          <p id="labs-empty" class="empty-state" hidden>No lab results yet. This section is ready when data arrives.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Baseline / local-first health tracking</span>
+      <span>Signals inform; clinicians diagnose.</span>
+    </footer>
+  </body>
+</html>

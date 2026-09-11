@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2987",
+  "title": "Health platform: MVP dashboard",
+  "description": "Build the initial local dashboard showing weight, BP, resting HR, HRV, sleep, resistance and cardio with current plus 7d/30d/90d/1y trends. Include dedicated Weight, BP, Sleep, Exercise and Labs sections as data becomes available.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-mvp-dashboard",
+  "contextPath": "features/health-platform-mvp-dashboard/selected-task.json",
+  "selectedAt": "2026-09-11T18:00:00Z"
+}

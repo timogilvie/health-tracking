@@ -162,6 +162,22 @@ Manual entries are stored as private immutable raw documents before canonical in
 the exact same entry is duplicate-safe, and manual workouts have presentation priority without
 deleting overlapping Apple Health or Oura records.
 
+## Local dashboard
+
+Launch the private dashboard after initialization. It binds only to `127.0.0.1`, sends no-store
+and restrictive content-security headers, and loads no remote scripts, fonts, or analytics.
+
+```bash
+uv run health dashboard
+# Keep the browser closed or choose another private port:
+uv run health dashboard --no-open --port 9876
+```
+
+The overview and dedicated Weight, BP, Sleep, Exercise, and Labs sections use the canonical daily,
+weekly, and rolling views. Switch among 7-day, 30-day, 90-day, and one-year charts in the header.
+The latest values may have different observation dates; each card states its own date. Stop the
+server with Ctrl-C.
+
 ## Architecture invariants
 
 - Raw source bytes are durable before normalization or cursor advancement.

@@ -32,6 +32,7 @@ from health.connectors.withings import (
     WithingsPayloadError,
     import_withings_export,
 )
+from health.dashboard import serve_dashboard
 from health.db import MigrationError, connect, migrate, migration_status
 from health.ingestion import (
     DuckDBCanonicalSink,
@@ -374,6 +375,37 @@ def doctor(root: RootOption = Path(".")) -> None:
         typer.echo(f"{'PASS' if passed else 'FAIL'} {name}: {detail}")
     if not all(passed for _, passed, _ in checks):
         raise typer.Exit(code=1)
+
+
+@app.command("dashboard")
+def dashboard_command(
+    port: Annotated[
+        int,
+        typer.Option(min=1, max=65_535, help="Private localhost port."),
+    ] = 8766,
+    open_browser: Annotated[
+        bool,
+        typer.Option("--open/--no-open", help="Open the dashboard in the default browser."),
+    ] = True,
+    root: RootOption = Path("."),
+) -> None:
+    """Serve the private health dashboard on the loopback interface."""
+
+    settings = settings_for(root)
+    try:
+        _runtime_config(
+            settings,
+            require_directories=True,
+            refresh_priorities=True,
+        )
+        serve_dashboard(
+            settings.database,
+            port=port,
+            open_browser=open_browser,
+        )
+    except Exception as exc:
+        typer.echo(f"FAIL Dashboard: {_safe_sync_error(exc)}")
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("policy-check")
