@@ -154,6 +154,18 @@ cardiovascular readings, activity, sleep stages, and workouts. Stable source-rec
 make repeat imports safe. Apple provenance—including source app, version, device, timestamps,
 metadata, and workout/correlation identity—is retained for cross-source reconciliation.
 
+Reconcile direct-vendor records with Apple Health copies after importing:
+
+```bash
+uv run health duplicates refresh
+uv run health duplicates list
+uv run health duplicates resolve LINK_UUID --resolution confirmed
+```
+
+High-confidence provenance, exact, and overlap matches are confirmed automatically. Ambiguous
+heuristic matches remain review candidates. Resolution changes presentation selection only:
+every original source row remains in DuckDB, and rejected review decisions survive refreshes.
+
 ## Manual workouts
 
 Record resistance training with a shorthand designed for times when the Oura ring is removed.

@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2989",
+  "title": "Health platform: cross-source deduplication",
+  "description": "Link exact, provenance-backed, heuristic, and overlapping cross-source records with confidence and review state while retaining all originals and selecting canonical records by source priority.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-cross-source-deduplication",
+  "contextPath": "features/health-platform-cross-source-deduplication/selected-task.json",
+  "selectedAt": "2026-09-11T15:58:08Z"
+}

@@ -6,6 +6,7 @@ import sys
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Annotated, Any
+from uuid import UUID
 
 import duckdb
 import httpx
@@ -46,7 +47,14 @@ from health.ingestion import (
 from health.layout import initialize_layout
 from health.manual import ManualWorkoutError, build_manual_workout, record_manual_workout
 from health.oss_policy import PolicyError, validate_repository_policy
-from health.transforms import source_priority_rows, sync_source_priorities
+from health.transforms import (
+    DuplicateResolutionError,
+    list_duplicate_candidates,
+    reconcile_duplicates,
+    resolve_duplicate,
+    source_priority_rows,
+    sync_source_priorities,
+)
 
 app = typer.Typer(no_args_is_help=True, help="Local-first personal health data platform.")
 auth_app = typer.Typer(no_args_is_help=True, help="Authorize provider accounts.")
@@ -55,12 +63,14 @@ oura_app = typer.Typer(no_args_is_help=True, help="Manage Oura OAuth credentials
 sync_app = typer.Typer(no_args_is_help=True, help="Synchronize and inspect provider data.")
 import_app = typer.Typer(no_args_is_help=True, help="Import provider export files.")
 workout_app = typer.Typer(no_args_is_help=True, help="Record manual workouts.")
+duplicates_app = typer.Typer(no_args_is_help=True, help="Reconcile and review duplicate links.")
 app.add_typer(auth_app, name="auth")
 app.add_typer(withings_app, name="withings")
 app.add_typer(oura_app, name="oura")
 app.add_typer(sync_app, name="sync")
 app.add_typer(import_app, name="import")
 app.add_typer(workout_app, name="workout")
+app.add_typer(duplicates_app, name="duplicates")
 RootOption = Annotated[
     Path,
     typer.Option(
@@ -184,6 +194,7 @@ def _sync_window_policy(project_config: dict[str, dict[str, Any]]) -> SyncWindow
 def _safe_sync_error(error: Exception) -> str:
     safe_errors = (
         AppleHealthExportError,
+        DuplicateResolutionError,
         MigrationError,
         ManualWorkoutError,
         OuraAPIError,
@@ -425,6 +436,72 @@ def policy_check(root: RootOption = Path(".")) -> None:
         f"{report.packages_verified} locked package(s), "
         f"{report.source_references_verified} source reference(s)"
     )
+
+
+@duplicates_app.command("refresh")
+def duplicates_refresh(root: RootOption = Path(".")) -> None:
+    """Reconcile cross-source duplicates while retaining every original row."""
+
+    settings = settings_for(root)
+    try:
+        _runtime_config(settings, require_directories=False, refresh_priorities=True)
+        report = reconcile_duplicates(settings.database)
+    except Exception as exc:
+        typer.echo(f"FAIL Duplicate reconciliation: {_safe_sync_error(exc)}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        "PASS Duplicate reconciliation: "
+        f"matched={report.matched} confirmed={report.confirmed} "
+        f"candidates={report.candidates} removed_stale={report.removed_stale}"
+    )
+
+
+@duplicates_app.command("list")
+def duplicates_list(root: RootOption = Path(".")) -> None:
+    """List ambiguous duplicate candidates without printing health values."""
+
+    settings = settings_for(root)
+    try:
+        _runtime_config(settings, require_directories=False)
+        candidates = list_duplicate_candidates(settings.database)
+    except Exception as exc:
+        typer.echo(f"FAIL Duplicate candidates: {_safe_sync_error(exc)}")
+        raise typer.Exit(code=1) from exc
+    if not candidates:
+        typer.echo("PASS Duplicate candidates: none")
+        return
+    for candidate in candidates:
+        typer.echo(
+            f"{candidate['id']} type={candidate['record_type']} "
+            f"method={candidate['method']} confidence={candidate['confidence']:.3f} "
+            f"canonical={candidate['canonical_record_id']} "
+            f"duplicate={candidate['duplicate_record_id']}"
+        )
+
+
+@duplicates_app.command("resolve")
+def duplicates_resolve(
+    link_id: Annotated[UUID, typer.Argument(help="Duplicate link UUID from `duplicates list`.")],
+    resolution: Annotated[
+        str,
+        typer.Option(help="Review decision: confirmed or rejected."),
+    ],
+    root: RootOption = Path("."),
+) -> None:
+    """Confirm or reject an ambiguous duplicate candidate."""
+
+    if resolution not in {"confirmed", "rejected"}:
+        raise typer.BadParameter(
+            "must be confirmed or rejected", param_hint="--resolution"
+        )
+    settings = settings_for(root)
+    try:
+        _runtime_config(settings, require_directories=False)
+        resolve_duplicate(settings.database, link_id, resolution)
+    except Exception as exc:
+        typer.echo(f"FAIL Duplicate resolution: {_safe_sync_error(exc)}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"PASS Duplicate resolution: id={link_id} resolution={resolution}")
 
 
 @app.command("lift")
