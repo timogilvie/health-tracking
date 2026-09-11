@@ -124,14 +124,15 @@ def test_dashboard_payload_exposes_current_trends_rollups_and_labs(
     payload = dashboard_payload(database, days=7)
 
     assert payload["latest_date"] == "2026-09-10"
-    assert payload["summary"]["weight"] == {
-        "value": 79.0,
-        "unit": "kg",
-        "date": "2026-09-10",
-    }
+    assert payload["summary"]["weight"]["value"] == pytest.approx(174.165, abs=0.001)
+    assert payload["summary"]["weight"]["unit"] == "lb"
+    assert payload["summary"]["weight"]["date"] == "2026-09-10"
     assert payload["summary"]["sleep"]["value"] == 450.0
     assert len(payload["daily"]) == 2
+    assert payload["daily"][0]["weight_lb"] == pytest.approx(176.37, abs=0.001)
+    assert all("weight_kg" not in row for row in payload["daily"])
     assert {row["window_days"] for row in payload["rolling"]} == {7, 30, 90, 365}
+    assert all("weight_lb_avg" in row and "weight_kg_avg" not in row for row in payload["rolling"])
     assert payload["weekly"][0]["resistance_minutes_total"] == 55.0
     assert payload["labs"][0]["name"] == "A1C"
     assert payload["labs"][0]["numeric_value"] == 5.1
@@ -196,6 +197,9 @@ def test_dashboard_assets_have_accessible_sections_and_no_remote_dependencies() 
     assert "aria-live" in html
     assert "prefers-reduced-motion" in stylesheet
     assert "https://" not in html + javascript + stylesheet
+    assert "weight_lb" in javascript
+    assert "weight_kg" not in javascript
+    assert ">lb<" in html
 
 
 def test_dashboard_cli_validates_project_and_passes_private_server_options(

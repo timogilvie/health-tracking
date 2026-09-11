@@ -176,7 +176,8 @@ uv run health dashboard --no-open --port 9876
 The overview and dedicated Weight, BP, Sleep, Exercise, and Labs sections use the canonical daily,
 weekly, and rolling views. Switch among 7-day, 30-day, 90-day, and one-year charts in the header.
 The latest values may have different observation dates; each card states its own date. Stop the
-server with Ctrl-C.
+server with Ctrl-C. Weight remains normalized in kilograms in DuckDB and is converted to pounds at
+the dashboard presentation boundary.
 
 ## Architecture invariants
 

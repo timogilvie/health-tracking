@@ -131,7 +131,7 @@ function setSummary(id, record, formatter, dateId) {
 
 function renderSummary() {
   const summary = state.payload.summary;
-  setSummary("summary-weight", summary.weight, (value) => `${number(value, 1)} kg`, "summary-weight-date");
+  setSummary("summary-weight", summary.weight, (value) => `${number(value, 1)} lb`, "summary-weight-date");
   const pressure = summary.systolic && summary.diastolic
     ? `${number(summary.systolic.value)}/${number(summary.diastolic.value)}`
     : "—";
@@ -171,15 +171,15 @@ function sum(rows, key) {
 }
 
 function renderWeight(rows) {
-  renderLineChart("weight-chart", rows, [{ key: "weight_kg", label: "Weight", format: (value) => `${number(value, 1)} kg` }], { label: `Weight over ${state.days} days`, axisDigits: 1 });
-  const observed = rows.filter((row) => row.weight_kg !== null);
+  renderLineChart("weight-chart", rows, [{ key: "weight_lb", label: "Weight", format: (value) => `${number(value, 1)} lb` }], { label: `Weight over ${state.days} days`, axisDigits: 1 });
+  const observed = rows.filter((row) => row.weight_lb !== null);
   if (observed.length >= 2) {
-    const change = Number(observed.at(-1).weight_kg) - Number(observed[0].weight_kg);
-    byId("weight-change").textContent = `${change > 0 ? "+" : ""}${number(change, 1)} kg across selected readings`;
+    const change = Number(observed.at(-1).weight_lb) - Number(observed[0].weight_lb);
+    byId("weight-change").textContent = `${change > 0 ? "+" : ""}${number(change, 1)} lb across selected readings`;
   } else {
     byId("weight-change").textContent = "Not enough data for change";
   }
-  renderWindows("weight-windows", ["weight_kg_avg"], ([value]) => value === null ? "—" : `${number(value, 1)} kg`);
+  renderWindows("weight-windows", ["weight_lb_avg"], ([value]) => value === null ? "—" : `${number(value, 1)} lb`);
 }
 
 function renderPressure(rows) {

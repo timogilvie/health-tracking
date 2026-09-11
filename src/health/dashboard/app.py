@@ -16,6 +16,7 @@ from health.db import connect
 
 ASSET_ROOT = Path(__file__).parent.parent / "dashboard_assets"
 ALLOWED_RANGE_DAYS = {7, 30, 90, 365}
+KG_TO_LB = 2.2046226218487757
 DAILY_COLUMNS = (
     "local_date",
     "weight_kg",
@@ -50,9 +51,26 @@ def _json_value(value: Any) -> Any:
     return value
 
 
+def _convert_weight_units(
+    daily: list[dict[str, Any]],
+    weekly: list[dict[str, Any]],
+    rolling: list[dict[str, Any]],
+) -> None:
+    """Convert canonical kilograms to display-only pounds in the browser read model."""
+
+    for rows, source, target in (
+        (daily, "weight_kg", "weight_lb"),
+        (weekly, "weight_kg_avg", "weight_lb_avg"),
+        (rolling, "weight_kg_avg", "weight_lb_avg"),
+    ):
+        for row in rows:
+            value = row.pop(source, None)
+            row[target] = float(value) * KG_TO_LB if value is not None else None
+
+
 def _latest_summary(daily: list[dict[str, Any]]) -> dict[str, dict[str, Any] | None]:
     definitions = {
-        "weight": ("weight_kg", "kg"),
+        "weight": ("weight_lb", "lb"),
         "systolic": ("systolic_mmhg", "mmHg"),
         "diastolic": ("diastolic_mmhg", "mmHg"),
         "resting_hr": ("resting_hr_bpm", "bpm"),
@@ -133,6 +151,7 @@ def dashboard_payload(database: Path, *, days: int = 365) -> dict[str, Any]:
             LIMIT 50
             """,
         )
+    _convert_weight_units(daily, weekly, rolling)
     payload = {
         "generated_at": datetime.now().astimezone(),
         "latest_date": latest_date,
