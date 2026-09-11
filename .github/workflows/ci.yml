@@ -22,5 +22,7 @@ jobs:
         run: uv run ruff check .
       - name: Validate OSS provenance policy
         run: uv run health policy-check
+      - name: Reject tracked secrets and personal health data
+        run: uv run health privacy-check
       - name: Run tests
         run: uv run pytest --cov=health --cov-report=term-missing

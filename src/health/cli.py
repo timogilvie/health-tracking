@@ -61,6 +61,7 @@ from health.manual import (
     record_manual_workout,
 )
 from health.oss_policy import PolicyError, validate_repository_policy
+from health.privacy_policy import PrivacyPolicyError, validate_repository_privacy
 from health.transforms import (
     DuplicateResolutionError,
     list_duplicate_candidates,
@@ -540,6 +541,22 @@ def policy_check(root: RootOption = Path(".")) -> None:
         f"{report.entries} entries, "
         f"{report.packages_verified} locked package(s), "
         f"{report.source_references_verified} source reference(s)"
+    )
+
+
+@app.command("privacy-check")
+def privacy_check(root: RootOption = Path(".")) -> None:
+    """Reject tracked credentials and likely personal health-data artifacts."""
+
+    try:
+        report = validate_repository_privacy(root)
+    except PrivacyPolicyError as exc:
+        typer.echo(f"FAIL privacy: {exc}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        "PASS privacy: "
+        f"{report.tracked_files} tracked file(s), "
+        f"{report.text_files_scanned} text file(s) scanned"
     )
 
 

@@ -9,9 +9,14 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 
-# Personal health data and derived artifacts must never be committed.
-data/*.duckdb
-data/*.duckdb.wal
+# Personal health data and derived artifacts must never be committed. Ignore every
+# file placed directly under data/ as well as every generated subtree; only the
+# empty directory placeholders are public.
+data/*
+!data/raw/
+!data/exports/
+!data/snapshots/
+!data/secrets/
 data/raw/**
 data/exports/**
 data/snapshots/**
@@ -20,6 +25,19 @@ data/secrets/**
 !data/exports/.gitkeep
 !data/snapshots/.gitkeep
 !data/secrets/.gitkeep
+
+# Common provider exports and credential files are also private if accidentally
+# copied elsewhere in the repository. Synthetic source files belong only under
+# tests/fixtures/ and are enforced by `health privacy-check`.
+.env.*
+!.env.example
+*.tokens.json
+credentials.json
+client_secret*.json
+export.zip
+export.xml
+data_*.zip
+apple_health_export/
 
 # Only synthetic fixtures belong under tests/fixtures.
 tests/fixtures/private/**

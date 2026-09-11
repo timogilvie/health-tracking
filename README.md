@@ -21,6 +21,13 @@ inspect another project directory.
 Real health data, credentials, local databases, exports, and snapshots are ignored by Git.
 Tests must use synthetic fixtures only.
 
+Before committing, verify that the Git index contains no credentials or likely personal-health
+artifacts. This scans tracked and staged files only; it never reads ignored private data:
+
+```bash
+uv run health privacy-check
+```
+
 ## Oura authorization
 
 Create an OAuth application in the [Oura developer portal](https://developer.ouraring.com),
@@ -80,27 +87,33 @@ cross-process lock and atomic file replacement.
 
 ## Withings synchronization
 
-### Manual account export
+### Manual account export and import
 
 Withings API access is optional. The offline importer accepts the ZIP delivered by Withings,
 an extracted export directory, or an individual supported CSV. It currently imports weight,
 fat mass, bone mass, muscle mass, hydration, and complete blood-pressure readings. Pound-based
 mass columns are converted to kilograms.
 
-In the Withings mobile app, open **Profile**, select **Settings**, choose **Export All Health
-Data**, select the user profile, and start the archive. Withings emails a download link when the
-archive is ready. See Withings' current instructions for
+To create and import a manual export:
+
+1. In the Withings mobile app, open **Profile** and select **Settings**.
+2. Choose **Export All Health Data**, select the user profile, and start the archive.
+3. When Withings emails the download link, download the ZIP to the computer where this project
+   is installed. Leave the archive zipped.
+4. Import the ZIP, refresh cross-source duplicate links, and check the local source status:
+
+```bash
+uv run health import withings ~/Downloads/data_PROFILE_1234567890.zip
+uv run health duplicates refresh
+uv run health sync status --source withings
+```
+
+Replace the example filename with the downloaded archive's name. To avoid path mistakes, type
+`uv run health import withings ` (including the trailing space), drag the ZIP from Finder into
+Terminal, and press Return. See Withings' current export instructions for
 [iOS](https://support.withings.com/hc/en-us/articles/360001399167-Withings-App-iOS-Exporting-your-data)
 or
 [Android](https://support.withings.com/hc/en-us/articles/31647944317201-Withings-App-Android-Exporting-your-data).
-
-Import the downloaded file directly; it does not need to be extracted or moved into the
-repository:
-
-```bash
-uv run health import withings ~/Downloads/withings-export.zip
-uv run health sync status --source withings
-```
 
 Naive CSV timestamps use `timezone` from `config/settings.yaml`. The original ZIP and each
 recognized CSV are retained in immutable raw storage, while unsupported export files are
@@ -142,11 +155,25 @@ git check-ignore -v .env data/health.duckdb data/secrets/withings.tokens.json
 
 ## Apple Health import
 
-Export your health data from the Health app on iPhone, then import the downloaded ZIP directly:
+Apple Health provides a manual export from the Health app on iPhone. It contains the health and
+fitness data available on the device in XML format. To create and import it:
+
+1. Open **Health** on the iPhone and select **Summary**.
+2. Tap your picture or initials in the upper-right corner.
+3. Scroll down and tap **Export All Health Data**, then tap **Export**. Building a large archive
+   may take several minutes.
+4. AirDrop the archive to the Mac or choose **Save to Files** and download it on the Mac. Leave
+   the resulting `export.zip` archive zipped.
+5. Import the ZIP and refresh cross-source duplicate links:
 
 ```bash
 uv run health import apple-health ~/Downloads/export.zip
+uv run health duplicates refresh
 ```
+
+If the archive has a different name or location, type `uv run health import apple-health `
+(including the trailing space), drag the ZIP from Finder into Terminal, and press Return. See
+[Apple's current export instructions](https://support.apple.com/guide/iphone/share-your-health-data-iph5ede58c3d/ios).
 
 The original ZIP or `export.xml` is copied into immutable raw storage with a SHA-256 manifest.
 The XML parser processes one element at a time and imports selected body measurements,
@@ -157,7 +184,6 @@ metadata, and workout/correlation identity—is retained for cross-source reconc
 Reconcile direct-vendor records with Apple Health copies after importing:
 
 ```bash
-uv run health duplicates refresh
 uv run health duplicates list
 uv run health duplicates resolve LINK_UUID --resolution confirmed
 ```
@@ -165,6 +191,10 @@ uv run health duplicates resolve LINK_UUID --resolution confirmed
 High-confidence provenance, exact, and overlap matches are confirmed automatically. Ambiguous
 heuristic matches remain review candidates. Resolution changes presentation selection only:
 every original source row remains in DuckDB, and rejected review decisions survive refreshes.
+
+Both provider archives contain sensitive health information. Do not extract them into a tracked
+directory, commit them to Git, or attach them to public issues. The importers retain private raw
+copies under the project's ignored `data/` directory.
 
 ## Laboratory results
 
