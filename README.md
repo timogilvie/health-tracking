@@ -203,6 +203,20 @@ Manual entries are stored as private immutable raw documents before canonical in
 the exact same entry is duplicate-safe, and manual workouts have presentation priority without
 deleting overlapping Apple Health or Oura records.
 
+## Contextual events
+
+Record standard drinks with the shortest path, or add a dated contextual event:
+
+```bash
+uv run health alcohol 4 --notes "optional private note"
+uv run health event add --type illness --date 2026-09-10 --duration-hours 48
+```
+
+Supported contexts include alcohol, illness, travel, injury, supplement, diet, training, and
+medication changes, plus `other`. Optional magnitude, unit, duration, and notes are stored as an
+immutable manual document before canonical insertion. Alcohol totals participate in daily
+rollups and all event types are available to longitudinal analysis.
+
 ## Local dashboard
 
 Launch the private dashboard after initialization. It binds only to `127.0.0.1`, sends no-store

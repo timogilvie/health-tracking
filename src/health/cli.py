@@ -51,7 +51,14 @@ from health.ingestion import (
     SyncWindowPolicy,
 )
 from health.layout import initialize_layout
-from health.manual import ManualWorkoutError, build_manual_workout, record_manual_workout
+from health.manual import (
+    ManualEventError,
+    ManualWorkoutError,
+    build_manual_event,
+    build_manual_workout,
+    record_manual_event,
+    record_manual_workout,
+)
 from health.oss_policy import PolicyError, validate_repository_policy
 from health.transforms import (
     DuplicateResolutionError,
@@ -70,6 +77,7 @@ sync_app = typer.Typer(no_args_is_help=True, help="Synchronize and inspect provi
 import_app = typer.Typer(no_args_is_help=True, help="Import provider export files.")
 workout_app = typer.Typer(no_args_is_help=True, help="Record manual workouts.")
 duplicates_app = typer.Typer(no_args_is_help=True, help="Reconcile and review duplicate links.")
+event_app = typer.Typer(no_args_is_help=True, help="Record contextual health events.")
 app.add_typer(auth_app, name="auth")
 app.add_typer(withings_app, name="withings")
 app.add_typer(oura_app, name="oura")
@@ -77,6 +85,7 @@ app.add_typer(sync_app, name="sync")
 app.add_typer(import_app, name="import")
 app.add_typer(workout_app, name="workout")
 app.add_typer(duplicates_app, name="duplicates")
+app.add_typer(event_app, name="event")
 RootOption = Annotated[
     Path,
     typer.Option(
@@ -202,6 +211,7 @@ def _safe_sync_error(error: Exception) -> str:
         AppleHealthExportError,
         DuplicateResolutionError,
         LabImportError,
+        ManualEventError,
         MigrationError,
         ManualWorkoutError,
         OuraAPIError,
@@ -313,6 +323,61 @@ def _record_manual_workout(
         f"run_id={result.ingestion_run_id} "
         f"inserted={result.inserted_count} "
         f"updated={result.updated_count} "
+        f"duplicate={result.duplicate_count}"
+    )
+
+
+def _record_manual_event(
+    *,
+    event_type: str,
+    event_date: str | None,
+    event_time: str | None,
+    duration_hours: float | None,
+    value: float | None,
+    unit: str | None,
+    notes: str | None,
+    root: Path,
+) -> None:
+    settings = settings_for(root)
+    try:
+        project_config = _runtime_config(
+            settings,
+            require_directories=True,
+            refresh_priorities=True,
+        )
+        timezone_name = project_config["settings"].get("timezone")
+        if not isinstance(timezone_name, str) or not timezone_name.strip():
+            raise ManualEventError("settings.timezone must be an IANA timezone name")
+        document = build_manual_event(
+            event_type=event_type,
+            timezone_name=timezone_name,
+            event_date=_parse_local_date(event_date),
+            event_time=_parse_local_time(event_time),
+            duration_hours=duration_hours,
+            value=value,
+            unit=unit,
+            notes=notes,
+            now=current_time(),
+        )
+        raw_store = RawStore(settings.raw)
+        result = record_manual_event(
+            document,
+            raw_store=raw_store,
+            runner=IngestionRunner(
+                database=settings.database,
+                raw_store=raw_store,
+                sink=DuckDBCanonicalSink(settings.database),
+            ),
+        )
+    except typer.BadParameter:
+        raise
+    except Exception as exc:
+        typer.echo(f"FAIL Manual event: {_safe_sync_error(exc)}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        "PASS Manual event: "
+        f"type={document.event_type} run_id={result.ingestion_run_id} "
+        f"inserted={result.inserted_count} updated={result.updated_count} "
         f"duplicate={result.duplicate_count}"
     )
 
@@ -545,6 +610,77 @@ def lift_command(
         workout_time=workout_time,
         focus=focus,
         rpe=rpe,
+        notes=notes,
+        root=root,
+    )
+
+
+@app.command("alcohol")
+def alcohol_command(
+    drinks: Annotated[
+        float,
+        typer.Argument(min=0.01, help="Number of standard drinks."),
+    ],
+    event_date: Annotated[
+        str | None,
+        typer.Option("--date", help="Local event date (YYYY-MM-DD)."),
+    ] = None,
+    event_time: Annotated[
+        str | None,
+        typer.Option("--time", help="Local event time (HH:MM)."),
+    ] = None,
+    notes: Annotated[str | None, typer.Option(help="Optional private notes.")] = None,
+    root: RootOption = Path("."),
+) -> None:
+    """Record alcohol quickly; for example, `health alcohol 4`."""
+
+    _record_manual_event(
+        event_type="alcohol",
+        event_date=event_date,
+        event_time=event_time,
+        duration_hours=None,
+        value=drinks,
+        unit="drinks",
+        notes=notes,
+        root=root,
+    )
+
+
+@event_app.command("add")
+def event_add(
+    event_type: Annotated[
+        str,
+        typer.Option("--type", help="Context type, such as illness, travel, or injury."),
+    ],
+    event_date: Annotated[
+        str | None,
+        typer.Option("--date", help="Local event date (YYYY-MM-DD)."),
+    ] = None,
+    event_time: Annotated[
+        str | None,
+        typer.Option("--time", help="Local event time (HH:MM)."),
+    ] = None,
+    duration_hours: Annotated[
+        float | None,
+        typer.Option(min=0.01, max=8760, help="Optional event duration in hours."),
+    ] = None,
+    value: Annotated[
+        float | None,
+        typer.Option(help="Optional numeric magnitude."),
+    ] = None,
+    unit: Annotated[str | None, typer.Option(help="Unit for --value.")] = None,
+    notes: Annotated[str | None, typer.Option(help="Optional private notes.")] = None,
+    root: RootOption = Path("."),
+) -> None:
+    """Record illness, travel, injury, or another contextual intervention."""
+
+    _record_manual_event(
+        event_type=event_type,
+        event_date=event_date,
+        event_time=event_time,
+        duration_hours=duration_hours,
+        value=value,
+        unit=unit,
         notes=notes,
         root=root,
     )

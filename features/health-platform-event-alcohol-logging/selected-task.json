@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2992",
+  "title": "Health platform: event and alcohol logging",
+  "description": "Implement frictionless local logging for alcohol and contextual health events as immutable, first-class longitudinal data.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-event-alcohol-logging",
+  "contextPath": "features/health-platform-event-alcohol-logging/selected-task.json",
+  "selectedAt": "2026-09-11T16:09:45Z"
+}
