@@ -10,6 +10,7 @@ from health.connectors.oura.oauth import (
 from health.connectors.oura.sleep import (
     OuraAPIError,
     OuraCollectionEnvelope,
+    OuraConnector,
     OuraPayloadError,
     OuraSleepConnector,
     parse_collection_envelope,
@@ -22,6 +23,7 @@ __all__ = [
     "OuraOAuthConfig",
     "OuraOAuthError",
     "OuraAPIError",
+    "OuraConnector",
     "OuraCollectionEnvelope",
     "OuraPayloadError",
     "OuraSleepConnector",

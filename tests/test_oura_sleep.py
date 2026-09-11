@@ -11,7 +11,7 @@ from oura_ring import OuraClient
 
 from health.config import HealthSettings, load_project_config
 from health.connectors import RawPage
-from health.connectors.oura import OuraPayloadError, OuraSleepConnector
+from health.connectors.oura import OuraConnector, OuraPayloadError, OuraSleepConnector
 from health.db import connect, migrate
 from health.ingestion import DuckDBCanonicalSink, IngestionRunner, RawStore
 from health.transforms import sync_source_priorities
@@ -61,6 +61,13 @@ class FixtureSession:
             "/v2/usercollection/daily_sleep": "daily-sleep.json",
             "/v2/usercollection/daily_readiness": "daily-readiness.json",
             "/v2/usercollection/heartrate": "heart-rate.json",
+            "/v2/usercollection/daily_activity": "daily-activity.json",
+            "/v2/usercollection/workout": (
+                "workout-page-2.json"
+                if copied_params.get("next_token")
+                else "workout-page-1.json"
+            ),
+            "/v2/usercollection/session": "session.json",
         }[path]
         prepared = requests.Request(method=method, url=url, params=params).prepare()
         response = requests.Response()
@@ -90,6 +97,27 @@ def make_connector(
         return client
 
     connector = OuraSleepConnector(
+        oauth=oauth,  # type: ignore[arg-type]
+        timezone_name="America/New_York",
+        client_factory=factory,
+        now=lambda: END,
+    )
+    return connector, oauth, session
+
+
+def make_complete_connector(
+    project_root: Path,
+) -> tuple[OuraConnector, FakeOAuth, FixtureSession]:
+    oauth = FakeOAuth()
+    session = FixtureSession(project_root / "tests/fixtures/providers/oura")
+
+    def factory(token: str) -> OuraClient:
+        assert token == "synthetic-oura-token"
+        client = OuraClient(access_token=token)
+        client.session = session
+        return client
+
+    connector = OuraConnector(
         oauth=oauth,  # type: ignore[arg-type]
         timezone_name="America/New_York",
         client_factory=factory,
@@ -236,3 +264,139 @@ def test_captured_query_metadata_has_no_access_token(project_root: Path) -> None
 
     assert all("access_token" not in parse_qs(urlparse(page.endpoint).query) for page in pages)
     assert all("synthetic-oura-token" not in json.dumps(page.request_metadata) for page in pages)
+
+
+def test_complete_oura_sync_preserves_activity_coverage_workouts_and_sessions(
+    tmp_path: Path,
+    project_root: Path,
+) -> None:
+    database = initialized_database(tmp_path, project_root)
+    raw_store = RawStore(tmp_path / "raw")
+    connector, oauth, session = make_complete_connector(project_root)
+    runner = IngestionRunner(
+        database=database,
+        raw_store=raw_store,
+        sink=DuckDBCanonicalSink(database),
+        now=lambda: END,
+    )
+
+    result = runner.sync(connector, start=START, end=END)
+
+    assert oauth.authenticated == 1
+    assert result.raw_count == 9
+    assert result.normalized_count == 21
+    assert result.inserted_count == 21
+    workout_calls = [
+        params
+        for path, params in session.calls
+        if path == "/v2/usercollection/workout"
+    ]
+    assert len(workout_calls) == 2
+    assert workout_calls[1]["next_token"] == "workout-page-2"
+
+    refs = list(raw_store.iter_refs("oura"))
+    workout_contents = {
+        raw_store.read(ref)
+        for ref in refs
+        if raw_store.manifest(ref)["endpoint"] == "v2/usercollection/workout"
+    }
+    assert workout_contents == {
+        (project_root / "tests/fixtures/providers/oura/workout-page-1.json").read_bytes(),
+        (project_root / "tests/fixtures/providers/oura/workout-page-2.json").read_bytes(),
+    }
+
+    with connect(database, read_only=True) as connection:
+        activity = connection.execute(
+            """
+            SELECT metric, value, original_value, original_unit,
+                   json_extract_string(metadata, '$.coverage.missing_values_are_unknown')
+            FROM observations
+            WHERE metric IN ('steps', 'active_energy_kcal', 'non_wear_minutes')
+            ORDER BY metric
+            """
+        ).fetchall()
+        workouts = connection.execute(
+            """
+            SELECT source_record_id, workout_type, duration_seconds, distance_m,
+                   energy_kcal,
+                   json_extract_string(metadata, '$.oura.record.source')
+            FROM workouts ORDER BY started_at
+            """
+        ).fetchall()
+        event = connection.execute(
+            """
+            SELECT event_type,
+                   json_extract_string(metadata, '$.oura.record.type'),
+                   json_extract_string(metadata, '$.oura.record.mood')
+            FROM events
+            """
+        ).fetchone()
+        daily = connection.execute(
+            """
+            SELECT steps, active_energy_kcal, resistance_minutes,
+                   cardio_minutes, workout_count
+            FROM daily_health WHERE local_date = '2026-09-10'
+            """
+        ).fetchone()
+    assert activity == [
+        ("active_energy_kcal", 640.0, 640.0, "kcal", "true"),
+        ("non_wear_minutes", 60.0, 3600.0, "s", "true"),
+        ("steps", 11234.0, 11234.0, "count", "true"),
+    ]
+    assert workouts == [
+        ("workout-strength-2026-09-10", "resistance", 3000, None, 280.0, "confirmed"),
+        ("workout-run-2026-09-10", "running", 1800, 5200.0, 360.0, "auto"),
+    ]
+    assert event == ("oura_session", "meditation", "relaxed")
+    assert daily == (11234.0, 640.0, 50.0, 30.0, 2)
+
+    replay = runner.replay(connector, refs)
+    assert replay.normalized_count == 21
+    assert replay.duplicate_count == 21
+
+
+def test_delayed_activity_revision_updates_overlap_without_zero_filling(
+    tmp_path: Path,
+    project_root: Path,
+) -> None:
+    database = initialized_database(tmp_path, project_root)
+    raw_store = RawStore(tmp_path / "raw")
+    connector, _oauth, _session = make_complete_connector(project_root)
+    runner = IngestionRunner(
+        database=database,
+        raw_store=raw_store,
+        sink=DuckDBCanonicalSink(database),
+        now=lambda: END,
+    )
+    runner.sync(connector, start=START, end=END)
+
+    fixture = json.loads(
+        (project_root / "tests/fixtures/providers/oura/daily-activity.json").read_text()
+    )
+    fixture["data"][0]["active_calories"] = 700
+    revised_ref = raw_store.save(
+        RawPage(
+            source="oura",
+            endpoint="v2/usercollection/daily_activity",
+            retrieved_at=datetime(2026, 9, 11, 4, tzinfo=UTC),
+            content=json.dumps(fixture, sort_keys=True).encode(),
+            http_status=200,
+        ),
+        ingestion_run_id=None,
+        transform_version=connector.transform_version,
+    )
+
+    replay = runner.replay(connector, [revised_ref])
+
+    assert replay.normalized_count == 10
+    assert replay.updated_count == 10
+    with connect(database, read_only=True) as connection:
+        values = dict(
+            connection.execute(
+                """
+                SELECT metric, value FROM observations
+                WHERE metric IN ('active_energy_kcal', 'steps')
+                """
+            ).fetchall()
+        )
+    assert values == {"active_energy_kcal": 700.0, "steps": 11234.0}

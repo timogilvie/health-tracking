@@ -1,0 +1,29 @@
+{
+  "data": [
+    {
+      "active_calories": 640,
+      "average_met_minutes": 1.7,
+      "contributors": {
+        "meet_daily_targets": 82,
+        "move_every_hour": 95,
+        "recovery_time": 88,
+        "stay_active": 79,
+        "training_frequency": 76,
+        "training_volume": 81
+      },
+      "day": "2026-09-10",
+      "equivalent_walking_distance": 10425,
+      "high_activity_time": 1800,
+      "id": "daily-activity-2026-09-10",
+      "low_activity_time": 7200,
+      "medium_activity_time": 2400,
+      "non_wear_time": 3600,
+      "score": 84,
+      "sedentary_time": 28800,
+      "steps": 11234,
+      "timestamp": "2026-09-10T04:00:00-04:00",
+      "total_calories": 2640
+    }
+  ],
+  "next_token": null
+}

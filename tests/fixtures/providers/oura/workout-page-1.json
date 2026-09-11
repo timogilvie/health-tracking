@@ -1,0 +1,17 @@
+{
+  "data": [
+    {
+      "activity": "strength_training",
+      "calories": 280,
+      "day": "2026-09-10",
+      "distance": null,
+      "end_datetime": "2026-09-10T08:50:00-04:00",
+      "id": "workout-strength-2026-09-10",
+      "intensity": "moderate",
+      "label": "Synthetic strength session",
+      "source": "confirmed",
+      "start_datetime": "2026-09-10T08:00:00-04:00"
+    }
+  ],
+  "next_token": "workout-page-2"
+}

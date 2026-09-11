@@ -22,6 +22,22 @@ class FakeWithingsOAuth:
         return "synthetic-access"
 
 
+class EmptyOuraConnector:
+    name = "oura"
+    transform_version = "oura-test-v1"
+
+    def authenticate(self) -> None:
+        pass
+
+    def fetch(self, start: datetime, end: datetime):
+        assert start.tzinfo is not None
+        assert end.tzinfo is not None
+        return iter(())
+
+    def normalize(self, raw_ref, raw_store):
+        return ()
+
+
 def initialize_project(tmp_path: Path, project_root: Path) -> None:
     copytree(project_root / "config", tmp_path / "config")
     copytree(project_root / "sql", tmp_path / "sql")
@@ -234,6 +250,40 @@ def test_sync_withings_wires_runtime_windows_replay_and_status(
     with connect(tmp_path / "data/health.duckdb", read_only=True) as connection:
         assert connection.execute("SELECT count(*) FROM observations").fetchone()[0] == 7
         assert connection.execute("SELECT count(*) FROM blood_pressure").fetchone()[0] == 1
+
+
+def test_sync_oura_wires_shared_watermark_and_status(
+    tmp_path: Path,
+    project_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    initialize_project(tmp_path, project_root)
+    monkeypatch.setattr(
+        health_cli,
+        "oura_connector",
+        lambda _settings, timezone_name: (
+            EmptyOuraConnector()
+            if timezone_name == "America/New_York"
+            else pytest.fail("unexpected timezone")
+        ),
+    )
+    end = datetime(2026, 9, 10, 15, tzinfo=UTC)
+
+    synced = runner.invoke(
+        app,
+        ["sync", "oura", "--end", end.isoformat(), "--root", str(tmp_path)],
+    )
+    status = runner.invoke(
+        app,
+        ["sync", "status", "--source", "oura", "--root", str(tmp_path)],
+    )
+
+    assert synced.exit_code == 0, synced.output
+    assert "PASS Oura sync:" in synced.output
+    assert "raw=0 normalized=0 inserted=0 updated=0 duplicate=0" in synced.output
+    assert status.exit_code == 0, status.output
+    assert "source=oura state=succeeded" in status.output
+    assert f"last_successful_end={end.isoformat()}" in status.output
 
 
 def test_sync_rejects_invalid_windows_before_network(

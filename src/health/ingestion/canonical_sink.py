@@ -118,6 +118,85 @@ class SleepSessionPayload(BaseModel):
         return self
 
 
+class WorkoutPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    started_at: datetime
+    ended_at: datetime
+    local_date: date
+    workout_type: Literal[
+        "resistance",
+        "walking",
+        "running",
+        "cycling",
+        "rowing",
+        "swimming",
+        "rucking",
+        "elliptical",
+        "mobility",
+        "sports",
+        "other",
+    ]
+    duration_seconds: int = Field(ge=0)
+    intensity: str | None = None
+    rpe: float | None = Field(default=None, ge=0, le=10, allow_inf_nan=False)
+    distance_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    energy_kcal: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    average_hr_bpm: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    max_hr_bpm: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    source: str = Field(min_length=1)
+    source_record_id: str = Field(min_length=1)
+    device: DeviceDescriptor | None = None
+    notes: str | None = None
+    transform_version: str = Field(min_length=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("started_at", "ended_at")
+    @classmethod
+    def timestamps_are_aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("workout timestamps must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def duration_matches_bounds(self) -> WorkoutPayload:
+        if self.ended_at < self.started_at:
+            raise ValueError("workout end must not be before start")
+        elapsed = int((self.ended_at - self.started_at).total_seconds())
+        if abs(elapsed - self.duration_seconds) > 1:
+            raise ValueError("workout duration must match its timestamps")
+        return self
+
+
+class EventPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_type: str = Field(min_length=1)
+    started_at: datetime
+    ended_at: datetime | None = None
+    local_date: date
+    value: float | None = Field(default=None, allow_inf_nan=False)
+    unit: str | None = None
+    notes: str | None = None
+    source: str = Field(min_length=1)
+    source_record_id: str = Field(min_length=1)
+    transform_version: str = Field(min_length=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("started_at", "ended_at")
+    @classmethod
+    def timestamps_are_aware(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("event timestamps must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def end_is_not_before_start(self) -> EventPayload:
+        if self.ended_at is not None and self.ended_at < self.started_at:
+            raise ValueError("event end must not be before start")
+        return self
+
+
 def _source_id(connection: duckdb.DuckDBPyConnection, source: str) -> UUID:
     connection.execute(
         """
@@ -192,13 +271,23 @@ class DuckDBCanonicalSink:
         ingestion_run_id: UUID,
     ) -> WriteDisposition:
         if record.record_type == "observation":
-            payload: ObservationPayload | BloodPressurePayload | SleepSessionPayload = (
+            payload: (
+                ObservationPayload
+                | BloodPressurePayload
+                | SleepSessionPayload
+                | WorkoutPayload
+                | EventPayload
+            ) = (
                 ObservationPayload.model_validate(record.values)
             )
         elif record.record_type == "blood_pressure":
             payload = BloodPressurePayload.model_validate(record.values)
         elif record.record_type == "sleep_session":
             payload = SleepSessionPayload.model_validate(record.values)
+        elif record.record_type == "workout":
+            payload = WorkoutPayload.model_validate(record.values)
+        elif record.record_type == "event":
+            payload = EventPayload.model_validate(record.values)
         else:
             raise ValueError(f"unsupported canonical record type: {record.record_type}")
         with connect(self.database) as connection:
@@ -218,10 +307,24 @@ class DuckDBCanonicalSink:
                         raw_ref=raw_ref,
                         ingestion_run_id=ingestion_run_id,
                     )
-                else:
+                elif isinstance(payload, SleepSessionPayload):
                     disposition = self._write_sleep_session(
                         connection,
                         sleep_session=payload,
+                        raw_ref=raw_ref,
+                        ingestion_run_id=ingestion_run_id,
+                    )
+                elif isinstance(payload, WorkoutPayload):
+                    disposition = self._write_workout(
+                        connection,
+                        workout=payload,
+                        raw_ref=raw_ref,
+                        ingestion_run_id=ingestion_run_id,
+                    )
+                else:
+                    disposition = self._write_event(
+                        connection,
+                        event=payload,
                         raw_ref=raw_ref,
                         ingestion_run_id=ingestion_run_id,
                     )
@@ -578,6 +681,204 @@ class DuckDBCanonicalSink:
                 device_id,
                 raw_ref.value,
                 sleep_session.transform_version,
+                json.dumps(metadata, sort_keys=True),
+            ],
+        )
+        return WriteDisposition.INSERTED
+
+    def _write_workout(
+        self,
+        connection: duckdb.DuckDBPyConnection,
+        *,
+        workout: WorkoutPayload,
+        raw_ref: RawRef,
+        ingestion_run_id: UUID,
+    ) -> WriteDisposition:
+        source_id = _source_id(connection, workout.source)
+        device_id = _device_id(
+            connection,
+            source_id=source_id,
+            device=workout.device,
+        )
+        existing = connection.execute(
+            """
+            SELECT workout_id, started_at, ended_at, local_date, workout_type,
+                   duration_seconds, intensity, rpe, distance_m, energy_kcal,
+                   average_hr_bpm, max_hr_bpm, device_id, notes,
+                   transform_version, metadata
+            FROM workouts
+            WHERE source_id = ? AND source_record_id = ?
+            """,
+            [source_id, workout.source_record_id],
+        ).fetchone()
+        metadata = {**workout.metadata, "ingestion_run_id": str(ingestion_run_id)}
+        semantic = (
+            workout.started_at,
+            workout.ended_at,
+            workout.local_date,
+            workout.workout_type,
+            workout.duration_seconds,
+            workout.intensity,
+            workout.rpe,
+            workout.distance_m,
+            workout.energy_kcal,
+            workout.average_hr_bpm,
+            workout.max_hr_bpm,
+            device_id,
+            workout.notes,
+            workout.transform_version,
+            workout.metadata,
+        )
+        if existing is not None:
+            existing_metadata = _metadata(existing[15])
+            existing_metadata.pop("ingestion_run_id", None)
+            if (*existing[1:15], existing_metadata) == semantic:
+                return WriteDisposition.DUPLICATE
+            connection.execute(
+                """
+                UPDATE workouts
+                SET started_at = ?, ended_at = ?, local_date = ?,
+                    workout_type = ?, duration_seconds = ?, intensity = ?,
+                    rpe = ?, distance_m = ?, energy_kcal = ?,
+                    average_hr_bpm = ?, max_hr_bpm = ?, device_id = ?,
+                    notes = ?, raw_file = ?, transform_version = ?, metadata = ?,
+                    ingested_at = current_timestamp
+                WHERE workout_id = ?
+                """,
+                [
+                    workout.started_at,
+                    workout.ended_at,
+                    workout.local_date,
+                    workout.workout_type,
+                    workout.duration_seconds,
+                    workout.intensity,
+                    workout.rpe,
+                    workout.distance_m,
+                    workout.energy_kcal,
+                    workout.average_hr_bpm,
+                    workout.max_hr_bpm,
+                    device_id,
+                    workout.notes,
+                    raw_ref.value,
+                    workout.transform_version,
+                    json.dumps(metadata, sort_keys=True),
+                    existing[0],
+                ],
+            )
+            return WriteDisposition.UPDATED
+
+        connection.execute(
+            """
+            INSERT INTO workouts (
+                started_at, ended_at, local_date, workout_type,
+                duration_seconds, intensity, rpe, distance_m, energy_kcal,
+                average_hr_bpm, max_hr_bpm, source_id, source_record_id,
+                device_id, notes, raw_file, transform_version, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                workout.started_at,
+                workout.ended_at,
+                workout.local_date,
+                workout.workout_type,
+                workout.duration_seconds,
+                workout.intensity,
+                workout.rpe,
+                workout.distance_m,
+                workout.energy_kcal,
+                workout.average_hr_bpm,
+                workout.max_hr_bpm,
+                source_id,
+                workout.source_record_id,
+                device_id,
+                workout.notes,
+                raw_ref.value,
+                workout.transform_version,
+                json.dumps(metadata, sort_keys=True),
+            ],
+        )
+        return WriteDisposition.INSERTED
+
+    def _write_event(
+        self,
+        connection: duckdb.DuckDBPyConnection,
+        *,
+        event: EventPayload,
+        raw_ref: RawRef,
+        ingestion_run_id: UUID,
+    ) -> WriteDisposition:
+        source_id = _source_id(connection, event.source)
+        existing = connection.execute(
+            """
+            SELECT event_id, event_type, started_at, ended_at, local_date,
+                   value, unit, notes, transform_version, metadata
+            FROM events
+            WHERE source_id = ? AND source_record_id = ?
+            """,
+            [source_id, event.source_record_id],
+        ).fetchone()
+        metadata = {**event.metadata, "ingestion_run_id": str(ingestion_run_id)}
+        semantic = (
+            event.event_type,
+            event.started_at,
+            event.ended_at,
+            event.local_date,
+            event.value,
+            event.unit,
+            event.notes,
+            event.transform_version,
+            event.metadata,
+        )
+        if existing is not None:
+            existing_metadata = _metadata(existing[9])
+            existing_metadata.pop("ingestion_run_id", None)
+            if (*existing[1:9], existing_metadata) == semantic:
+                return WriteDisposition.DUPLICATE
+            connection.execute(
+                """
+                UPDATE events
+                SET event_type = ?, started_at = ?, ended_at = ?,
+                    local_date = ?, value = ?, unit = ?, notes = ?,
+                    raw_file = ?, transform_version = ?, metadata = ?,
+                    ingested_at = current_timestamp
+                WHERE event_id = ?
+                """,
+                [
+                    event.event_type,
+                    event.started_at,
+                    event.ended_at,
+                    event.local_date,
+                    event.value,
+                    event.unit,
+                    event.notes,
+                    raw_ref.value,
+                    event.transform_version,
+                    json.dumps(metadata, sort_keys=True),
+                    existing[0],
+                ],
+            )
+            return WriteDisposition.UPDATED
+
+        connection.execute(
+            """
+            INSERT INTO events (
+                event_type, started_at, ended_at, local_date, value, unit,
+                notes, source_id, source_record_id, raw_file,
+                transform_version, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                event.event_type,
+                event.started_at,
+                event.ended_at,
+                event.local_date,
+                event.value,
+                event.unit,
+                event.notes,
+                source_id,
+                event.source_record_id,
+                raw_ref.value,
+                event.transform_version,
                 json.dumps(metadata, sort_keys=True),
             ],
         )

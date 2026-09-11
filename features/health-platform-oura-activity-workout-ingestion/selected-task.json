@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2984",
+  "title": "Health platform: Oura activity/workout ingestion",
+  "description": "Ingest Oura daily activity, workouts, sessions, and heart-rate data through the pinned oura-ring client. Save every page before normalization; own overlap, watermarks, workout mapping, provenance, deduplication, and replay; preserve lower-priority records and represent non-wear explicitly rather than inferring inactivity.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-oura-activity-workout-ingestion",
+  "contextPath": "features/health-platform-oura-activity-workout-ingestion/selected-task.json",
+  "selectedAt": "2026-09-11T15:00:00Z"
+}

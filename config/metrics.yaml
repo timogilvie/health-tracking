@@ -29,3 +29,23 @@ metrics:
     unit: C
   temperature_trend_deviation_c:
     unit: C
+  activity_score:
+    unit: score
+  steps:
+    unit: count
+  active_energy_kcal:
+    unit: kcal
+  total_energy_kcal:
+    unit: kcal
+  equivalent_walking_distance_m:
+    unit: m
+  high_activity_minutes:
+    unit: min
+  medium_activity_minutes:
+    unit: min
+  low_activity_minutes:
+    unit: min
+  sedentary_minutes:
+    unit: min
+  non_wear_minutes:
+    unit: min

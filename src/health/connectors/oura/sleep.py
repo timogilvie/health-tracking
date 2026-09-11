@@ -80,6 +80,27 @@ class OuraDataClient(Protocol):
         latest: bool | None = None,
     ) -> list[dict[str, Any]]: ...
 
+    def get_daily_activity(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        document_id: str | None = None,
+    ) -> list[dict[str, Any]] | dict[str, Any]: ...
+
+    def get_workouts(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        document_id: str | None = None,
+    ) -> list[dict[str, Any]] | dict[str, Any]: ...
+
+    def get_sessions(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        document_id: str | None = None,
+    ) -> list[dict[str, Any]] | dict[str, Any]: ...
+
 
 def parse_collection_envelope(content: bytes) -> OuraCollectionEnvelope:
     try:
@@ -155,6 +176,8 @@ def _observation(
     metadata: dict[str, Any],
     plausible_min: float,
     plausible_max: float,
+    original_value: float | None = None,
+    original_unit: str | None = None,
 ) -> NormalizedRecord:
     quality_reasons = list(metadata.get("quality_reasons", []))
     if not plausible_min <= value <= plausible_max:
@@ -171,8 +194,8 @@ def _observation(
             "source_record_id": source_record_id,
             "device": None,
             "original_metric": original_metric,
-            "original_value": value,
-            "original_unit": unit,
+            "original_value": value if original_value is None else original_value,
+            "original_unit": unit if original_unit is None else original_unit,
             "quality": "suspect" if quality_reasons else "valid",
             "timezone": timezone_name,
             "local_date": local_date,
@@ -237,6 +260,22 @@ class OuraSleepConnector:
             return RetryableIngestionError("Oura API temporarily unavailable")
         return OuraAPIError(http_status=status)
 
+    def _resource_calls(
+        self,
+        client: OuraDataClient,
+        *,
+        local_start: str,
+        local_end: str,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[Callable[[], object], ...]:
+        return (
+            lambda: client.get_sleep_periods(local_start, local_end),
+            lambda: client.get_daily_sleep(local_start, local_end),
+            lambda: client.get_daily_readiness(local_start, local_end),
+            lambda: client.get_heart_rate(start.isoformat(), end.isoformat()),
+        )
+
     def fetch(self, start: datetime, end: datetime) -> Iterable[RawPage]:
         if start.tzinfo is None or start.utcoffset() is None:
             raise ValueError("Oura sync start must be timezone-aware")
@@ -249,11 +288,12 @@ class OuraSleepConnector:
         self._captured: list[RawPage] = []
         with self.client_factory(self.oauth.access_token()) as client:
             client.session.hooks.setdefault("response", []).append(self._capture)
-            calls = (
-                lambda: client.get_sleep_periods(local_start, local_end),
-                lambda: client.get_daily_sleep(local_start, local_end),
-                lambda: client.get_daily_readiness(local_start, local_end),
-                lambda: client.get_heart_rate(start.isoformat(), end.isoformat()),
+            calls = self._resource_calls(
+                client,
+                local_start=local_start,
+                local_end=local_end,
+                start=start,
+                end=end,
             )
             for call in calls:
                 first_page = len(self._captured)
@@ -490,3 +530,246 @@ class OuraSleepConnector:
                 )
             )
         return records
+
+
+WORKOUT_TYPE_MAP = {
+    "strength_training": "resistance",
+    "weightlifting": "resistance",
+    "walking": "walking",
+    "hiking": "walking",
+    "running": "running",
+    "jogging": "running",
+    "cycling": "cycling",
+    "indoor_cycling": "cycling",
+    "rowing": "rowing",
+    "swimming": "swimming",
+    "elliptical": "elliptical",
+    "yoga": "mobility",
+    "stretching": "mobility",
+    "mobility": "mobility",
+    "basketball": "sports",
+    "football": "sports",
+    "soccer": "sports",
+    "tennis": "sports",
+    "volleyball": "sports",
+}
+
+
+class OuraConnector(OuraSleepConnector):
+    """Complete Oura MVP connector with one shared watermark and replay boundary."""
+
+    transform_version = "oura-v1"
+
+    def _resource_calls(
+        self,
+        client: OuraDataClient,
+        *,
+        local_start: str,
+        local_end: str,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[Callable[[], object], ...]:
+        recovery = super()._resource_calls(
+            client,
+            local_start=local_start,
+            local_end=local_end,
+            start=start,
+            end=end,
+        )
+        return recovery + (
+            lambda: client.get_daily_activity(local_start, local_end),
+            lambda: client.get_workouts(local_start, local_end),
+            lambda: client.get_sessions(local_start, local_end),
+        )
+
+    def normalize(self, raw_ref: RawRef, raw_store: RawStore) -> Iterable[NormalizedRecord]:
+        manifest = raw_store.manifest(raw_ref)
+        http_status = manifest.get("http_status")
+        if not isinstance(http_status, int) or not 200 <= http_status < 300:
+            return ()
+        endpoint = str(manifest.get("endpoint", ""))
+        if endpoint.endswith("/daily_activity"):
+            return self._daily_activity(parse_collection_envelope(raw_store.read(raw_ref)))
+        if endpoint.endswith("/workout"):
+            return self._workouts(parse_collection_envelope(raw_store.read(raw_ref)))
+        if endpoint.endswith("/session"):
+            return self._sessions(parse_collection_envelope(raw_store.read(raw_ref)))
+        return super().normalize(raw_ref, raw_store)
+
+    def _daily_activity(self, envelope: OuraCollectionEnvelope) -> list[NormalizedRecord]:
+        definitions = {
+            "score": ("activity_score", "score", 1.0, 0.0, 100.0),
+            "steps": ("steps", "count", 1.0, 0.0, 200_000.0),
+            "active_calories": (
+                "active_energy_kcal",
+                "kcal",
+                1.0,
+                0.0,
+                20_000.0,
+            ),
+            "total_calories": ("total_energy_kcal", "kcal", 1.0, 0.0, 30_000.0),
+            "equivalent_walking_distance": (
+                "equivalent_walking_distance_m",
+                "m",
+                1.0,
+                0.0,
+                500_000.0,
+            ),
+            "high_activity_time": (
+                "high_activity_minutes",
+                "min",
+                1 / 60,
+                0.0,
+                1_440.0,
+            ),
+            "medium_activity_time": (
+                "medium_activity_minutes",
+                "min",
+                1 / 60,
+                0.0,
+                1_440.0,
+            ),
+            "low_activity_time": (
+                "low_activity_minutes",
+                "min",
+                1 / 60,
+                0.0,
+                1_440.0,
+            ),
+            "sedentary_time": ("sedentary_minutes", "min", 1 / 60, 0.0, 1_440.0),
+            "non_wear_time": ("non_wear_minutes", "min", 1 / 60, 0.0, 1_440.0),
+        }
+        normalized: list[NormalizedRecord] = []
+        for record in envelope.data:
+            source_record_id, identity_reasons = _source_record_id(
+                record,
+                kind="daily-activity",
+            )
+            observed_at, local_date = _day_timestamp(record, timezone=self.timezone)
+            non_wear = _optional_duration(record.get("non_wear_time"), field_name="non_wear_time")
+            for original_metric, definition in definitions.items():
+                metric, unit, multiplier, plausible_min, plausible_max = definition
+                original_value = _optional_number(
+                    record.get(original_metric),
+                    field_name=original_metric,
+                )
+                if original_value is None:
+                    continue
+                value = original_value * multiplier
+                metadata = self._metadata(
+                    endpoint="daily_activity",
+                    record=record,
+                    envelope=envelope,
+                    quality_reasons=identity_reasons,
+                )
+                metadata["coverage"] = {
+                    "non_wear_seconds": non_wear,
+                    "missing_values_are_unknown": True,
+                }
+                normalized.append(
+                    _observation(
+                        metric=metric,
+                        value=value,
+                        unit=unit,
+                        observed_at=observed_at,
+                        local_date=local_date,
+                        timezone_name=self.timezone_name,
+                        source_record_id=source_record_id,
+                        original_metric=original_metric,
+                        original_value=original_value,
+                        original_unit="s" if original_metric.endswith("_time") else unit,
+                        transform_version=self.transform_version,
+                        metadata=metadata,
+                        plausible_min=plausible_min,
+                        plausible_max=plausible_max,
+                    )
+                )
+        return normalized
+
+    def _workouts(self, envelope: OuraCollectionEnvelope) -> list[NormalizedRecord]:
+        normalized: list[NormalizedRecord] = []
+        for record in envelope.data:
+            source_record_id, quality_reasons = _source_record_id(record, kind="workout")
+            started_at = _aware_timestamp(
+                record.get("start_datetime"),
+                field_name="start_datetime",
+            )
+            ended_at = _aware_timestamp(record.get("end_datetime"), field_name="end_datetime")
+            if ended_at < started_at:
+                raise OuraPayloadError("Oura workout ends before it starts")
+            activity = str(record.get("activity") or "unknown").strip().lower()
+            workout_type = WORKOUT_TYPE_MAP.get(activity, "other")
+            normalized.append(
+                NormalizedRecord(
+                    record_type="workout",
+                    identity=source_record_id,
+                    values={
+                        "started_at": started_at,
+                        "ended_at": ended_at,
+                        "local_date": started_at.astimezone(self.timezone).date(),
+                        "workout_type": workout_type,
+                        "duration_seconds": int((ended_at - started_at).total_seconds()),
+                        "intensity": record.get("intensity"),
+                        "rpe": None,
+                        "distance_m": _optional_number(
+                            record.get("distance"),
+                            field_name="distance",
+                        ),
+                        "energy_kcal": _optional_number(
+                            record.get("calories"),
+                            field_name="calories",
+                        ),
+                        "average_hr_bpm": None,
+                        "max_hr_bpm": None,
+                        "source": self.name,
+                        "source_record_id": source_record_id,
+                        "device": None,
+                        "notes": record.get("label"),
+                        "transform_version": self.transform_version,
+                        "metadata": self._metadata(
+                            endpoint="workout",
+                            record=record,
+                            envelope=envelope,
+                            quality_reasons=quality_reasons,
+                        ),
+                    },
+                )
+            )
+        return normalized
+
+    def _sessions(self, envelope: OuraCollectionEnvelope) -> list[NormalizedRecord]:
+        normalized: list[NormalizedRecord] = []
+        for record in envelope.data:
+            source_record_id, quality_reasons = _source_record_id(record, kind="session")
+            started_at = _aware_timestamp(
+                record.get("start_datetime"),
+                field_name="start_datetime",
+            )
+            ended_at = _aware_timestamp(record.get("end_datetime"), field_name="end_datetime")
+            if ended_at < started_at:
+                raise OuraPayloadError("Oura session ends before it starts")
+            normalized.append(
+                NormalizedRecord(
+                    record_type="event",
+                    identity=source_record_id,
+                    values={
+                        "event_type": "oura_session",
+                        "started_at": started_at,
+                        "ended_at": ended_at,
+                        "local_date": started_at.astimezone(self.timezone).date(),
+                        "value": None,
+                        "unit": None,
+                        "notes": None,
+                        "source": self.name,
+                        "source_record_id": source_record_id,
+                        "transform_version": self.transform_version,
+                        "metadata": self._metadata(
+                            endpoint="session",
+                            record=record,
+                            envelope=envelope,
+                            quality_reasons=quality_reasons,
+                        ),
+                    },
+                )
+            )
+        return normalized

@@ -1,0 +1,18 @@
+{
+  "data": [
+    {
+      "day": "2026-09-10",
+      "end_datetime": "2026-09-10T21:15:00-04:00",
+      "heart_rate": {
+        "interval": 300,
+        "items": [62, 59, 57],
+        "timestamp": "2026-09-10T21:00:00-04:00"
+      },
+      "id": "session-meditation-2026-09-10",
+      "mood": "relaxed",
+      "start_datetime": "2026-09-10T21:00:00-04:00",
+      "type": "meditation"
+    }
+  ],
+  "next_token": null
+}

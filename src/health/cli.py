@@ -13,7 +13,14 @@ import typer
 
 from health.auth import FileSecretStore, OAuthStateError, SecretStoreError
 from health.config import HealthSettings, load_project_config
-from health.connectors.oura import OuraOAuth, OuraOAuthConfig, OuraOAuthError
+from health.connectors.oura import (
+    OuraAPIError,
+    OuraConnector,
+    OuraOAuth,
+    OuraOAuthConfig,
+    OuraOAuthError,
+    OuraPayloadError,
+)
 from health.connectors.withings import (
     WithingsAPIError,
     WithingsExportError,
@@ -107,6 +114,13 @@ def oura_oauth(settings: HealthSettings) -> OuraOAuth:
     )
 
 
+def oura_connector(settings: HealthSettings, timezone_name: str) -> OuraConnector:
+    return OuraConnector(
+        oauth=oura_oauth(settings),
+        timezone_name=timezone_name,
+    )
+
+
 def http_client() -> httpx.Client:
     """Create the shared provider client; isolated for deterministic CLI tests."""
 
@@ -165,7 +179,9 @@ def _sync_window_policy(project_config: dict[str, dict[str, Any]]) -> SyncWindow
 def _safe_sync_error(error: Exception) -> str:
     safe_errors = (
         MigrationError,
+        OuraAPIError,
         OuraOAuthError,
+        OuraPayloadError,
         RawStorageError,
         RetryableIngestionError,
         SecretStoreError,
@@ -352,6 +368,62 @@ def sync_withings(
     )
 
 
+@sync_app.command("oura")
+def sync_oura(
+    start: TimestampOption = None,
+    end: TimestampOption = None,
+    root: RootOption = Path("."),
+) -> None:
+    """Synchronize Oura recovery and activity data through one source watermark."""
+
+    requested_start = _parse_timestamp(start, option="start")
+    requested_end = _parse_timestamp(end, option="end")
+    if (
+        requested_start is not None
+        and requested_end is not None
+        and requested_start > requested_end
+    ):
+        raise typer.BadParameter("must not be before --start", param_hint="--end")
+
+    settings = settings_for(root)
+    try:
+        project_config = _runtime_config(
+            settings,
+            require_directories=True,
+            refresh_priorities=True,
+        )
+        timezone_name = project_config["settings"].get("timezone")
+        if not isinstance(timezone_name, str) or not timezone_name.strip():
+            raise ValueError("settings.timezone must be an IANA timezone name")
+        runner = IngestionRunner(
+            database=settings.database,
+            raw_store=RawStore(settings.raw),
+            sink=DuckDBCanonicalSink(settings.database),
+            window_policy=_sync_window_policy(project_config),
+        )
+        result = runner.sync(
+            oura_connector(settings, timezone_name),
+            start=requested_start,
+            end=requested_end,
+        )
+    except Exception as exc:
+        typer.echo(f"FAIL Oura sync: {_safe_sync_error(exc)}")
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        "PASS Oura sync: "
+        f"source={result.source} "
+        f"run_id={result.ingestion_run_id} "
+        f"start={_iso(result.requested_start)} "
+        f"end={_iso(result.requested_end)} "
+        f"raw={result.raw_count} "
+        f"normalized={result.normalized_count} "
+        f"inserted={result.inserted_count} "
+        f"updated={result.updated_count} "
+        f"duplicate={result.duplicate_count}"
+    )
+
+
 @import_app.command("withings")
 def import_withings_command(
     export_path: ExportPathArgument,
@@ -403,9 +475,9 @@ def sync_status(
 ) -> None:
     """Report local ingestion state without credentials or provider requests."""
 
-    if source != "withings":
+    if source not in {"withings", "oura"}:
         raise typer.BadParameter(
-            "only 'withings' is currently supported",
+            "must be 'withings' or 'oura'",
             param_hint="--source",
         )
     settings = settings_for(root)

@@ -42,6 +42,24 @@ Open the authorization URL, approve the requested scopes, then copy the callback
 `state` values into the hidden prompts. Oura refresh tokens are single-use; refresh is serialized
 under a provider lock and the new access/refresh pair is persisted atomically.
 
+## Oura synchronization
+
+After authorization, one command imports sleep periods, daily sleep/readiness, sampled heart
+rate, daily activity, workouts, and Oura sessions. Keeping these resources in one connector
+gives the Oura account one overlap window and one authoritative watermark.
+
+```bash
+uv run health sync oura \
+  --start '2026-09-01T00:00:00-04:00' \
+  --end '2026-09-10T23:59:59-04:00'
+uv run health sync status --source oura
+```
+
+Each paginated response is stored before normalization. Repeating a bounded sync is safe and
+should be duplicate-heavy unless Oura revised a record. Daily non-wear time is stored explicitly;
+missing Oura samples remain unknown and never imply inactivity. Oura workout records remain in
+the database even where a manual resistance workout is preferred by the canonical view.
+
 ## Withings authorization
 
 Copy `.env.example` to `.env` and set the Withings client ID, client secret, redirect URI,
