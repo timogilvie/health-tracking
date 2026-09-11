@@ -28,6 +28,10 @@ EXPECTED_VIEWS = {
     "canonical_sleep_sessions",
     "canonical_workouts",
     "daily_health",
+    "health_calendar",
+    "rolling_health",
+    "rolling_health_latest",
+    "weekly_health",
 }
 EXPECTED_INDEXES = {
     "blood_pressure_date_idx",
@@ -48,7 +52,7 @@ def test_database_initializes_and_migrations_are_idempotent(
     database = tmp_path / "health.duckdb"
     migrations = project_root / "sql"
 
-    assert migrate(database, migrations) == [1, 2, 3, 4]
+    assert migrate(database, migrations) == [1, 2, 3, 4, 5]
     assert migrate(database, migrations) == []
 
     with connect(database, read_only=True) as connection:
@@ -76,6 +80,7 @@ def test_database_initializes_and_migrations_are_idempotent(
         (2, "indexes"),
         (3, "ingestion_state"),
         (4, "daily_views"),
+        (5, "weekly_rolling_views"),
     ]
     assert pending == []
     assert drift == []

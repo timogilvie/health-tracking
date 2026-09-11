@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2986",
+  "title": "Health platform: weekly and rolling rollups",
+  "description": "Create weekly_health plus standardized 7/30/90/365-day rolling metrics for weight, BP, HRV, resting HR, sleep, steps and exercise totals. Use Monday week starts and dashboard-appropriate defaults.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-weekly-rolling-rollups",
+  "contextPath": "features/health-platform-weekly-rolling-rollups/selected-task.json",
+  "selectedAt": "2026-09-11T17:00:00Z"
+}

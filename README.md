@@ -186,6 +186,11 @@ for presentation:
 - `daily_health` provides one row per local date for weight/body composition, BP, sleep and
   recovery, steps/activity, resistance/cardio minutes, and contextual events. Sleep is assigned
   to its stored wake date.
+- `health_calendar` fills calendar dates between the first and last daily record without turning
+  missing measurements into zeroes.
+- `weekly_health` starts weeks on Monday and exposes averages, totals, and metric-specific coverage
+  counts. `rolling_health` calculates the same core trends over calendar-day 7/30/90/365 windows;
+  `rolling_health_latest` is the dashboard-ready four-row snapshot at the newest local date.
 
 After pulling a migration or changing source priorities, run:
 
