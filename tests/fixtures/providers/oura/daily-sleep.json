@@ -1,0 +1,20 @@
+{
+  "data": [
+    {
+      "contributors": {
+        "deep_sleep": 78,
+        "efficiency": 86,
+        "latency": 91,
+        "rem_sleep": 83,
+        "restfulness": 75,
+        "timing": 88,
+        "total_sleep": 84
+      },
+      "day": "2026-09-10",
+      "id": "daily-sleep-2026-09-10",
+      "score": 85,
+      "timestamp": "2026-09-10T00:00:00-04:00"
+    }
+  ],
+  "next_token": null
+}

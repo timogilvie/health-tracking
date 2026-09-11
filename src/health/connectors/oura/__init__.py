@@ -7,6 +7,13 @@ from health.connectors.oura.oauth import (
     OuraOAuthConfig,
     OuraOAuthError,
 )
+from health.connectors.oura.sleep import (
+    OuraAPIError,
+    OuraCollectionEnvelope,
+    OuraPayloadError,
+    OuraSleepConnector,
+    parse_collection_envelope,
+)
 
 __all__ = [
     "AuthenticationStatus",
@@ -14,4 +21,9 @@ __all__ = [
     "OuraOAuth",
     "OuraOAuthConfig",
     "OuraOAuthError",
+    "OuraAPIError",
+    "OuraCollectionEnvelope",
+    "OuraPayloadError",
+    "OuraSleepConnector",
+    "parse_collection_envelope",
 ]

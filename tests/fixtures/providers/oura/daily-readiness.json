@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "contributors": {
+        "activity_balance": 82,
+        "body_temperature": 95,
+        "hrv_balance": 79,
+        "previous_night": 88,
+        "recovery_index": 84,
+        "resting_heart_rate": 90,
+        "sleep_balance": 86
+      },
+      "day": "2026-09-10",
+      "id": "daily-readiness-2026-09-10",
+      "score": 87,
+      "temperature_deviation": -0.12,
+      "temperature_trend_deviation": 0.04,
+      "timestamp": "2026-09-10T00:00:00-04:00"
+    }
+  ],
+  "next_token": null
+}

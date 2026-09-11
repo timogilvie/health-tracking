@@ -21,3 +21,11 @@ metrics:
     unit: bpm
   hrv_rmssd_ms:
     unit: ms
+  sleep_score:
+    unit: score
+  readiness_score:
+    unit: score
+  temperature_deviation_c:
+    unit: C
+  temperature_trend_deviation_c:
+    unit: C

@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2983",
+  "title": "Health platform: Oura sleep ingestion",
+  "description": "Ingest Oura sleep periods, daily sleep/readiness, heart rate, and required recovery resources with immutable raw persistence and canonical sleep_sessions normalization. Capture sleep duration, efficiency, latency, stages, resting/lowest HR, HRV, respiratory rate, vendor scores, IDs, and metadata with project-owned overlap, watermarks, normalization, and replay.",
+  "labels": [],
+  "state": "Backlog",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-oura-sleep-ingestion",
+  "contextPath": "features/health-platform-oura-sleep-ingestion/selected-task.json",
+  "selectedAt": "2026-09-11T14:14:14Z"
+}

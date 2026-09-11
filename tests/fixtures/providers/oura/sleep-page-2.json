@@ -1,0 +1,23 @@
+{
+  "data": [
+    {
+      "id": "nap-2026-09-10",
+      "average_breath": 14.1,
+      "average_heart_rate": 57,
+      "average_hrv": 39,
+      "awake_time": 300,
+      "bedtime_end": "2026-09-10T15:00:00-04:00",
+      "bedtime_start": "2026-09-10T14:20:00-04:00",
+      "day": "2026-09-10",
+      "deep_sleep_duration": 300,
+      "latency": 180,
+      "light_sleep_duration": 1200,
+      "lowest_heart_rate": 51,
+      "rem_sleep_duration": 600,
+      "time_in_bed": 2400,
+      "total_sleep_duration": null,
+      "type": "rest"
+    }
+  ],
+  "next_token": null
+}

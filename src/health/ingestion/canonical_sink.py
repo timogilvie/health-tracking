@@ -9,7 +9,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 import duckdb
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from health.db import connect
 from health.ingestion.models import NormalizedRecord, WriteDisposition
@@ -77,6 +77,45 @@ class BloodPressurePayload(BaseModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("blood-pressure timestamp must be timezone-aware")
         return value
+
+
+class SleepSessionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sleep_date: date
+    started_at: datetime
+    ended_at: datetime
+    time_in_bed_seconds: int | None = Field(default=None, ge=0)
+    total_sleep_seconds: int | None = Field(default=None, ge=0)
+    awake_seconds: int | None = Field(default=None, ge=0)
+    light_seconds: int | None = Field(default=None, ge=0)
+    deep_seconds: int | None = Field(default=None, ge=0)
+    rem_seconds: int | None = Field(default=None, ge=0)
+    latency_seconds: int | None = Field(default=None, ge=0)
+    efficiency_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    resting_hr_bpm: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    lowest_hr_bpm: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    average_hrv_rmssd_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    respiratory_rate: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    sleep_score: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    source: str = Field(min_length=1)
+    source_record_id: str = Field(min_length=1)
+    device: DeviceDescriptor | None = None
+    transform_version: str = Field(min_length=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("started_at", "ended_at")
+    @classmethod
+    def timestamps_are_aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("sleep timestamps must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def end_is_not_before_start(self) -> SleepSessionPayload:
+        if self.ended_at < self.started_at:
+            raise ValueError("sleep end must not be before start")
+        return self
 
 
 def _source_id(connection: duckdb.DuckDBPyConnection, source: str) -> UUID:
@@ -153,11 +192,13 @@ class DuckDBCanonicalSink:
         ingestion_run_id: UUID,
     ) -> WriteDisposition:
         if record.record_type == "observation":
-            payload: ObservationPayload | BloodPressurePayload = (
+            payload: ObservationPayload | BloodPressurePayload | SleepSessionPayload = (
                 ObservationPayload.model_validate(record.values)
             )
         elif record.record_type == "blood_pressure":
             payload = BloodPressurePayload.model_validate(record.values)
+        elif record.record_type == "sleep_session":
+            payload = SleepSessionPayload.model_validate(record.values)
         else:
             raise ValueError(f"unsupported canonical record type: {record.record_type}")
         with connect(self.database) as connection:
@@ -170,10 +211,17 @@ class DuckDBCanonicalSink:
                         raw_ref=raw_ref,
                         ingestion_run_id=ingestion_run_id,
                     )
-                else:
+                elif isinstance(payload, BloodPressurePayload):
                     disposition = self._write_blood_pressure(
                         connection,
                         blood_pressure=payload,
+                        raw_ref=raw_ref,
+                        ingestion_run_id=ingestion_run_id,
+                    )
+                else:
+                    disposition = self._write_sleep_session(
+                        connection,
+                        sleep_session=payload,
                         raw_ref=raw_ref,
                         ingestion_run_id=ingestion_run_id,
                     )
@@ -395,6 +443,141 @@ class DuckDBCanonicalSink:
                 blood_pressure.quality,
                 raw_ref.value,
                 blood_pressure.transform_version,
+                json.dumps(metadata, sort_keys=True),
+            ],
+        )
+        return WriteDisposition.INSERTED
+
+    def _write_sleep_session(
+        self,
+        connection: duckdb.DuckDBPyConnection,
+        *,
+        sleep_session: SleepSessionPayload,
+        raw_ref: RawRef,
+        ingestion_run_id: UUID,
+    ) -> WriteDisposition:
+        source_id = _source_id(connection, sleep_session.source)
+        device_id = _device_id(
+            connection,
+            source_id=source_id,
+            device=sleep_session.device,
+        )
+        existing = connection.execute(
+            """
+            SELECT sleep_session_id, sleep_date, started_at, ended_at,
+                   time_in_bed_seconds, total_sleep_seconds, awake_seconds,
+                   light_seconds, deep_seconds, rem_seconds, latency_seconds,
+                   efficiency_pct, resting_hr_bpm, lowest_hr_bpm,
+                   average_hrv_rmssd_ms, respiratory_rate, sleep_score,
+                   device_id, transform_version, metadata
+            FROM sleep_sessions
+            WHERE source_id = ? AND source_record_id = ?
+            """,
+            [source_id, sleep_session.source_record_id],
+        ).fetchone()
+        metadata = {
+            **sleep_session.metadata,
+            "ingestion_run_id": str(ingestion_run_id),
+        }
+        semantic = (
+            sleep_session.sleep_date,
+            sleep_session.started_at,
+            sleep_session.ended_at,
+            sleep_session.time_in_bed_seconds,
+            sleep_session.total_sleep_seconds,
+            sleep_session.awake_seconds,
+            sleep_session.light_seconds,
+            sleep_session.deep_seconds,
+            sleep_session.rem_seconds,
+            sleep_session.latency_seconds,
+            sleep_session.efficiency_pct,
+            sleep_session.resting_hr_bpm,
+            sleep_session.lowest_hr_bpm,
+            sleep_session.average_hrv_rmssd_ms,
+            sleep_session.respiratory_rate,
+            sleep_session.sleep_score,
+            device_id,
+            sleep_session.transform_version,
+            sleep_session.metadata,
+        )
+        if existing is not None:
+            existing_metadata = _metadata(existing[19])
+            existing_metadata.pop("ingestion_run_id", None)
+            if (*existing[1:19], existing_metadata) == semantic:
+                return WriteDisposition.DUPLICATE
+            connection.execute(
+                """
+                UPDATE sleep_sessions
+                SET sleep_date = ?, started_at = ?, ended_at = ?,
+                    time_in_bed_seconds = ?, total_sleep_seconds = ?,
+                    awake_seconds = ?, light_seconds = ?, deep_seconds = ?,
+                    rem_seconds = ?, latency_seconds = ?, efficiency_pct = ?,
+                    resting_hr_bpm = ?, lowest_hr_bpm = ?,
+                    average_hrv_rmssd_ms = ?, respiratory_rate = ?,
+                    sleep_score = ?, device_id = ?, raw_file = ?,
+                    transform_version = ?, metadata = ?,
+                    ingested_at = current_timestamp
+                WHERE sleep_session_id = ?
+                """,
+                [
+                    sleep_session.sleep_date,
+                    sleep_session.started_at,
+                    sleep_session.ended_at,
+                    sleep_session.time_in_bed_seconds,
+                    sleep_session.total_sleep_seconds,
+                    sleep_session.awake_seconds,
+                    sleep_session.light_seconds,
+                    sleep_session.deep_seconds,
+                    sleep_session.rem_seconds,
+                    sleep_session.latency_seconds,
+                    sleep_session.efficiency_pct,
+                    sleep_session.resting_hr_bpm,
+                    sleep_session.lowest_hr_bpm,
+                    sleep_session.average_hrv_rmssd_ms,
+                    sleep_session.respiratory_rate,
+                    sleep_session.sleep_score,
+                    device_id,
+                    raw_ref.value,
+                    sleep_session.transform_version,
+                    json.dumps(metadata, sort_keys=True),
+                    existing[0],
+                ],
+            )
+            return WriteDisposition.UPDATED
+
+        connection.execute(
+            """
+            INSERT INTO sleep_sessions (
+                sleep_date, started_at, ended_at, time_in_bed_seconds,
+                total_sleep_seconds, awake_seconds, light_seconds,
+                deep_seconds, rem_seconds, latency_seconds, efficiency_pct,
+                resting_hr_bpm, lowest_hr_bpm, average_hrv_rmssd_ms,
+                respiratory_rate, sleep_score, source_id, source_record_id,
+                device_id, raw_file, transform_version, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                sleep_session.sleep_date,
+                sleep_session.started_at,
+                sleep_session.ended_at,
+                sleep_session.time_in_bed_seconds,
+                sleep_session.total_sleep_seconds,
+                sleep_session.awake_seconds,
+                sleep_session.light_seconds,
+                sleep_session.deep_seconds,
+                sleep_session.rem_seconds,
+                sleep_session.latency_seconds,
+                sleep_session.efficiency_pct,
+                sleep_session.resting_hr_bpm,
+                sleep_session.lowest_hr_bpm,
+                sleep_session.average_hrv_rmssd_ms,
+                sleep_session.respiratory_rate,
+                sleep_session.sleep_score,
+                source_id,
+                sleep_session.source_record_id,
+                device_id,
+                raw_ref.value,
+                sleep_session.transform_version,
                 json.dumps(metadata, sort_keys=True),
             ],
         )

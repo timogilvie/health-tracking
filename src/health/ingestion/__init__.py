@@ -4,6 +4,7 @@ from health.ingestion.canonical_sink import (
     BloodPressurePayload,
     DuckDBCanonicalSink,
     ObservationPayload,
+    SleepSessionPayload,
 )
 from health.ingestion.models import NormalizedRecord, WriteDisposition
 from health.ingestion.raw_store import RawIntegrityError, RawRef, RawStorageError, RawStore
@@ -23,6 +24,7 @@ __all__ = [
     "IngestionRunner",
     "NormalizedRecord",
     "ObservationPayload",
+    "SleepSessionPayload",
     "RawIntegrityError",
     "RawRef",
     "RawStorageError",
