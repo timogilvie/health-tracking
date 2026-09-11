@@ -299,6 +299,7 @@ def test_sync_rejects_invalid_windows_before_network(
     naive = runner.invoke(
         app,
         ["sync", "withings", "--start", "2026-09-01T12:00:00", "--root", str(tmp_path)],
+        terminal_width=160,
     )
     reversed_window = runner.invoke(
         app,
@@ -312,6 +313,7 @@ def test_sync_rejects_invalid_windows_before_network(
             "--root",
             str(tmp_path),
         ],
+        terminal_width=160,
     )
 
     assert naive.exit_code == 2
