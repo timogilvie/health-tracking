@@ -13,6 +13,7 @@ import typer
 
 from health.auth import FileSecretStore, OAuthStateError, SecretStoreError
 from health.config import HealthSettings, load_project_config
+from health.connectors.apple_health import AppleHealthExportError, import_apple_health_export
 from health.connectors.oura import (
     OuraAPIError,
     OuraConnector,
@@ -84,7 +85,7 @@ ExportPathArgument = Annotated[
         exists=True,
         readable=True,
         resolve_path=True,
-        help="Withings export ZIP, extracted directory, or CSV file.",
+        help="Provider export file or extracted directory.",
     ),
 ]
 
@@ -182,6 +183,7 @@ def _sync_window_policy(project_config: dict[str, dict[str, Any]]) -> SyncWindow
 
 def _safe_sync_error(error: Exception) -> str:
     safe_errors = (
+        AppleHealthExportError,
         MigrationError,
         ManualWorkoutError,
         OuraAPIError,
@@ -657,6 +659,46 @@ def import_withings_command(
 
     typer.echo(
         "PASS Withings export import: "
+        f"source={result.source} "
+        f"run_id={result.ingestion_run_id} "
+        f"files={result.raw_count} "
+        f"normalized={result.normalized_count} "
+        f"inserted={result.inserted_count} "
+        f"updated={result.updated_count} "
+        f"duplicate={result.duplicate_count}"
+    )
+
+
+@import_app.command("apple-health")
+def import_apple_health_command(
+    export_path: ExportPathArgument,
+    root: RootOption = Path("."),
+) -> None:
+    """Import an Apple Health ZIP or export.xml with bounded parser memory."""
+
+    settings = settings_for(root)
+    try:
+        _runtime_config(
+            settings,
+            require_directories=True,
+            refresh_priorities=True,
+        )
+        raw_store = RawStore(settings.raw)
+        result = import_apple_health_export(
+            export_path,
+            raw_store=raw_store,
+            runner=IngestionRunner(
+                database=settings.database,
+                raw_store=raw_store,
+                sink=DuckDBCanonicalSink(settings.database),
+            ),
+        )
+    except Exception as exc:
+        typer.echo(f"FAIL Apple Health export import: {_safe_sync_error(exc)}")
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        "PASS Apple Health export import: "
         f"source={result.source} "
         f"run_id={result.ingestion_run_id} "
         f"files={result.raw_count} "

@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2988",
+  "title": "Health platform: Apple Health export parser",
+  "description": "Implement streaming Apple Health export.xml parsing with immutable raw retention, deterministic identities, provenance, and selected canonical body, cardiovascular, activity, workout, and sleep records.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-apple-health-export-parser",
+  "contextPath": "features/health-platform-apple-health-export-parser/selected-task.json",
+  "selectedAt": "2026-09-11T15:51:30Z"
+}

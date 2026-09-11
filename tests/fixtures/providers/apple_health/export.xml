@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE HealthData>
+<HealthData locale="en_US">
+ <ExportDate value="2026-09-10 12:00:00 -0400"/>
+ <Record type="HKQuantityTypeIdentifierBodyMass" sourceName="Withings" sourceVersion="7.4" device="Withings Body+" unit="lb" creationDate="2026-09-10 08:02:00 -0400" startDate="2026-09-10 08:00:00 -0400" endDate="2026-09-10 08:00:00 -0400" value="176.37">
+  <MetadataEntry key="HKWasUserEntered" value="0"/>
+ </Record>
+ <Record type="HKQuantityTypeIdentifierRestingHeartRate" sourceName="Apple Watch" sourceVersion="11.0" device="Apple Watch Series 9" unit="count/min" creationDate="2026-09-10 09:00:00 -0400" startDate="2026-09-10 09:00:00 -0400" endDate="2026-09-10 09:00:00 -0400" value="53"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="11.0" device="Apple Watch Series 9" creationDate="2026-09-10 07:00:00 -0400" startDate="2026-09-10 00:00:00 -0400" endDate="2026-09-10 07:00:00 -0400" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+ <Record type="HKQuantityTypeIdentifierBloodPressureSystolic" sourceName="Withings" sourceVersion="7.4" device="Withings BPM" unit="mmHg" creationDate="2026-09-10 08:32:00 -0400" startDate="2026-09-10 08:30:00 -0400" endDate="2026-09-10 08:30:00 -0400" value="118"/>
+ <Record type="HKQuantityTypeIdentifierBloodPressureDiastolic" sourceName="Withings" sourceVersion="7.4" device="Withings BPM" unit="mmHg" creationDate="2026-09-10 08:32:00 -0400" startDate="2026-09-10 08:30:00 -0400" endDate="2026-09-10 08:30:00 -0400" value="74"/>
+ <Record type="HKQuantityTypeIdentifierDietaryWater" sourceName="Phone" unit="mL" creationDate="2026-09-10 10:00:00 -0400" startDate="2026-09-10 10:00:00 -0400" endDate="2026-09-10 10:00:00 -0400" value="250"/>
+ <Workout workoutActivityType="HKWorkoutActivityTypeTraditionalStrengthTraining" duration="45" durationUnit="min" sourceName="Apple Watch" sourceVersion="11.0" device="Apple Watch Series 9" creationDate="2026-09-10 18:46:00 -0400" startDate="2026-09-10 18:00:00 -0400" endDate="2026-09-10 18:45:00 -0400" totalEnergyBurned="300" totalEnergyBurnedUnit="kcal">
+  <MetadataEntry key="HKIndoorWorkout" value="1"/>
+ </Workout>
+</HealthData>

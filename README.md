@@ -140,6 +140,20 @@ git status --short
 git check-ignore -v .env data/health.duckdb data/secrets/withings.tokens.json
 ```
 
+## Apple Health import
+
+Export your health data from the Health app on iPhone, then import the downloaded ZIP directly:
+
+```bash
+uv run health import apple-health ~/Downloads/export.zip
+```
+
+The original ZIP or `export.xml` is copied into immutable raw storage with a SHA-256 manifest.
+The XML parser processes one element at a time and imports selected body measurements,
+cardiovascular readings, activity, sleep stages, and workouts. Stable source-record identities
+make repeat imports safe. Apple provenance—including source app, version, device, timestamps,
+metadata, and workout/correlation identity—is retained for cross-source reconciliation.
+
 ## Manual workouts
 
 Record resistance training with a shorthand designed for times when the Oura ring is removed.

@@ -7,8 +7,10 @@ import json
 import os
 import re
 from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC
+from datetime import UTC, datetime
+from io import BufferedReader
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -161,6 +163,84 @@ class RawStore:
             raise
         return raw_ref
 
+    def save_file(
+        self,
+        path: Path,
+        *,
+        source: str,
+        endpoint: str,
+        retrieved_at: datetime,
+        content_type: str,
+        request_metadata: Mapping[str, Any] | None,
+        ingestion_run_id: str | None,
+        transform_version: str,
+    ) -> RawRef:
+        """Stream a local file into immutable storage without buffering it in memory."""
+
+        if not SOURCE_PATTERN.fullmatch(source):
+            raise RawStorageError(f"invalid source name: {source!r}")
+        if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
+            raise RawStorageError("retrieved_at must be timezone-aware")
+        source_path = path.expanduser().resolve()
+        if not source_path.is_file():
+            raise RawStorageError(f"raw source file does not exist: {source_path}")
+
+        retrieved = retrieved_at.astimezone(UTC)
+        directory = self.root / source / f"{retrieved:%Y}" / f"{retrieved:%m}" / f"{retrieved:%d}"
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(directory, 0o700)
+        identity = uuid4().hex
+        timestamp = retrieved.strftime("%Y%m%dT%H%M%S.%fZ")
+        filename = (
+            f"{_endpoint_slug(endpoint)}__{timestamp}__{identity}{_extension(content_type)}"
+        )
+        payload_path = directory / filename
+        manifest_path = directory / f"{filename}.manifest.json"
+        temporary = payload_path.with_name(f".{payload_path.name}.{uuid4().hex}.tmp")
+        digest = hashlib.sha256()
+        byte_length = 0
+        try:
+            with source_path.open("rb") as source_handle, temporary.open("xb") as target:
+                os.chmod(temporary, 0o600)
+                while chunk := source_handle.read(1024 * 1024):
+                    target.write(chunk)
+                    digest.update(chunk)
+                    byte_length += len(chunk)
+                target.flush()
+                os.fsync(target.fileno())
+            os.link(temporary, payload_path)
+        except FileExistsError as exc:
+            raise RawStorageError(f"raw artifact already exists: {payload_path}") from exc
+        finally:
+            temporary.unlink(missing_ok=True)
+
+        raw_ref = RawRef(payload_path.relative_to(self.root).as_posix())
+        manifest = {
+            "schema_version": 1,
+            "raw_ref": raw_ref.value,
+            "sha256": digest.hexdigest(),
+            "byte_length": byte_length,
+            "source": source,
+            "endpoint": endpoint,
+            "retrieved_at": retrieved.isoformat().replace("+00:00", "Z"),
+            "content_type": content_type,
+            "http_status": None,
+            "response_headers": {},
+            "request_metadata": _redact(request_metadata or {}),
+            "ingestion_run_id": ingestion_run_id,
+            "transform_version": transform_version,
+            "parent_archive": None,
+        }
+        manifest_bytes = (
+            json.dumps(manifest, indent=2, sort_keys=True, separators=(",", ": ")) + "\n"
+        ).encode()
+        try:
+            _write_exclusive_atomic(manifest_path, manifest_bytes)
+        except Exception:
+            payload_path.unlink(missing_ok=True)
+            raise
+        return raw_ref
+
     def _path(self, raw_ref: RawRef) -> Path:
         relative = Path(raw_ref.value)
         if relative.is_absolute() or ".." in relative.parts:
@@ -194,6 +274,28 @@ class RawStore:
         if len(content) != manifest.get("byte_length") or digest != manifest.get("sha256"):
             raise RawIntegrityError(f"payload integrity check failed for {raw_ref}")
         return content
+
+    @contextmanager
+    def open_verified(self, raw_ref: RawRef) -> Iterator[BufferedReader]:
+        """Verify a raw artifact incrementally, then open it for streaming consumers."""
+
+        path = self._path(raw_ref)
+        manifest = self.manifest(raw_ref)
+        digest = hashlib.sha256()
+        byte_length = 0
+        try:
+            with path.open("rb") as handle:
+                while chunk := handle.read(1024 * 1024):
+                    digest.update(chunk)
+                    byte_length += len(chunk)
+        except OSError as exc:
+            raise RawIntegrityError(f"cannot read payload {raw_ref}: {exc}") from exc
+        if byte_length != manifest.get("byte_length") or digest.hexdigest() != manifest.get(
+            "sha256"
+        ):
+            raise RawIntegrityError(f"payload integrity check failed for {raw_ref}")
+        with path.open("rb") as handle:
+            yield handle
 
     def iter_refs(self, source: str | None = None) -> Iterator[RawRef]:
         """Yield committed artifacts in lexical path order."""
