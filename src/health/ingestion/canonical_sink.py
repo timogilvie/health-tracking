@@ -401,4 +401,4 @@ class DuckDBCanonicalSink:
         return WriteDisposition.INSERTED
 
     def refresh(self) -> None:
-        """Derived views are introduced by later work packages."""
+        """SQL views are live and require no materialized refresh."""

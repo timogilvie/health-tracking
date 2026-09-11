@@ -16,8 +16,18 @@ EXPECTED_TABLES = {
     "schema_version",
     "sleep_sessions",
     "source_sync_state",
+    "source_priorities",
     "sources",
     "workouts",
+}
+EXPECTED_VIEWS = {
+    "blood_pressure_session_readings",
+    "blood_pressure_sessions",
+    "canonical_blood_pressure",
+    "canonical_observations",
+    "canonical_sleep_sessions",
+    "canonical_workouts",
+    "daily_health",
 }
 EXPECTED_INDEXES = {
     "blood_pressure_date_idx",
@@ -38,11 +48,17 @@ def test_database_initializes_and_migrations_are_idempotent(
     database = tmp_path / "health.duckdb"
     migrations = project_root / "sql"
 
-    assert migrate(database, migrations) == [1, 2, 3]
+    assert migrate(database, migrations) == [1, 2, 3, 4]
     assert migrate(database, migrations) == []
 
     with connect(database, read_only=True) as connection:
         tables = {row[0] for row in connection.execute("SHOW TABLES").fetchall()}
+        views = {
+            row[0]
+            for row in connection.execute(
+                "SELECT view_name FROM duckdb_views() WHERE internal = false"
+            ).fetchall()
+        }
         indexes = {
             row[0]
             for row in connection.execute("SELECT index_name FROM duckdb_indexes()").fetchall()
@@ -52,9 +68,15 @@ def test_database_initializes_and_migrations_are_idempotent(
             "SELECT version, name FROM schema_version ORDER BY version"
         ).fetchall()
 
-    assert tables == EXPECTED_TABLES
+    assert tables == EXPECTED_TABLES | EXPECTED_VIEWS
+    assert views == EXPECTED_VIEWS
     assert indexes == EXPECTED_INDEXES
-    assert versions == [(1, "schema"), (2, "indexes"), (3, "ingestion_state")]
+    assert versions == [
+        (1, "schema"),
+        (2, "indexes"),
+        (3, "ingestion_state"),
+        (4, "daily_views"),
+    ]
     assert pending == []
     assert drift == []
 

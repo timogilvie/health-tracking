@@ -108,6 +108,31 @@ git check-ignore -v .env data/health.duckdb data/secrets/withings.tokens.json
 - Source priority selects presentation; it never deletes overlapping source records.
 - The database can be rebuilt without contacting vendors.
 
+## Canonical and daily views
+
+`health init` applies the derived-view migration and synchronizes
+`config/source_priority.yaml` into DuckDB. Provider sync and file-import commands refresh those
+priorities before ingestion; `health doctor` reports if the database copy is stale.
+
+The live views preserve every canonical source row while selecting the preferred enabled source
+for presentation:
+
+- `canonical_observations`, `canonical_blood_pressure`, `canonical_sleep_sessions`, and
+  `canonical_workouts` apply source priority without deleting lower-priority data.
+- `blood_pressure_session_readings` groups readings no more than ten minutes apart, and
+  `blood_pressure_sessions` retains first, subsequent-reading, session-mean, and preferred
+  values.
+- `daily_health` provides one row per local date for weight/body composition, BP, sleep and
+  recovery, steps/activity, resistance/cardio minutes, and contextual events. Sleep is assigned
+  to its stored wake date.
+
+After pulling a migration or changing source priorities, run:
+
+```bash
+uv run health init
+uv run health doctor
+```
+
 The open-source dependency decision is documented in
 [`docs/adr/0001-open-source-ingestion-foundation.md`](docs/adr/0001-open-source-ingestion-foundation.md).
 Dependency provenance, attribution, upgrades, rollback, and replacement criteria are enforced by

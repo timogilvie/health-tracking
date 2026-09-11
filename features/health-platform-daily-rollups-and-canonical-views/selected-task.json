@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2985",
+  "title": "Health platform: daily rollups and canonical views",
+  "description": "Create canonical source-selection views and `daily_health` rollups for weight, BP, sleep, HRV, resting HR, steps/activity, resistance/cardio minutes and contextual fields. Implement sleep-date attribution to wake date and BP session grouping without deleting raw readings.",
+  "labels": [],
+  "state": "Backlog",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-daily-rollups-and-canonical-views",
+  "contextPath": "features/health-platform-daily-rollups-and-canonical-views/selected-task.json",
+  "selectedAt": "2026-09-11T12:53:50Z"
+}

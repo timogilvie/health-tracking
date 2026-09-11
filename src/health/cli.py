@@ -35,6 +35,7 @@ from health.ingestion import (
 )
 from health.layout import initialize_layout
 from health.oss_policy import PolicyError, validate_repository_policy
+from health.transforms import source_priority_rows, sync_source_priorities
 
 app = typer.Typer(no_args_is_help=True, help="Local-first personal health data platform.")
 auth_app = typer.Typer(no_args_is_help=True, help="Authorize provider accounts.")
@@ -119,8 +120,10 @@ def _runtime_config(
     settings: HealthSettings,
     *,
     require_directories: bool,
+    refresh_priorities: bool = False,
 ) -> dict[str, dict[str, Any]]:
     project_config = load_project_config(settings)
+    source_priority_rows(project_config)
     if require_directories:
         required = (settings.raw, settings.exports, settings.snapshots, settings.secrets)
         missing = [str(path) for path in required if not path.is_dir()]
@@ -132,6 +135,8 @@ def _runtime_config(
         pending, drift = migration_status(connection, settings.project_root / "sql")
     if pending or drift:
         raise MigrationError(f"database schema is not current: pending={pending}, drift={drift}")
+    if refresh_priorities:
+        sync_source_priorities(settings.database, project_config)
     return project_config
 
 
@@ -183,9 +188,11 @@ def init_command(root: RootOption = Path(".")) -> None:
     """Create private data directories and initialize the database."""
 
     settings = settings_for(root)
-    load_project_config(settings)
+    project_config = load_project_config(settings)
+    source_priority_rows(project_config)
     initialize_layout(settings)
     applied = migrate(settings.database, settings.project_root / "sql")
+    sync_source_priorities(settings.database, project_config)
     suffix = f"; applied {len(applied)} migration(s)" if applied else "; schema current"
     typer.echo(f"Initialized {settings.project_root}{suffix}")
 
@@ -196,10 +203,12 @@ def doctor(root: RootOption = Path(".")) -> None:
 
     settings = settings_for(root)
     checks: list[tuple[str, bool, str]] = []
+    project_config: dict[str, dict[str, Any]] | None = None
 
     checks.append(("python", sys.version_info >= (3, 12), sys.version.split()[0]))
     try:
-        load_project_config(settings)
+        project_config = load_project_config(settings)
+        source_priority_rows(project_config)
         checks.append(("config", True, str(settings.configs)))
     except ValueError as exc:
         checks.append(("config", False, str(exc)))
@@ -213,6 +222,23 @@ def doctor(root: RootOption = Path(".")) -> None:
             raise MigrationError(f"database does not exist: {settings.database}")
         with connect(settings.database, read_only=True) as connection:
             pending, drift = migration_status(connection, settings.project_root / "sql")
+            if not pending and not drift and project_config is not None:
+                actual_priorities = connection.execute(
+                    "SELECT data_type, source, priority FROM source_priorities "
+                    "ORDER BY data_type, priority"
+                ).fetchall()
+                expected_priorities = sorted(
+                    source_priority_rows(project_config),
+                    key=lambda row: (row[0], row[2]),
+                )
+                priorities_current = actual_priorities == expected_priorities
+                checks.append(
+                    (
+                        "source priorities",
+                        priorities_current,
+                        "current" if priorities_current else "run `health init`",
+                    )
+                )
         checks.append(("database", not pending and not drift, f"pending={pending}, drift={drift}"))
     except (MigrationError, OSError) as exc:
         checks.append(("database", False, str(exc)))
@@ -262,7 +288,11 @@ def sync_withings(
 
     settings = settings_for(root)
     try:
-        project_config = _runtime_config(settings, require_directories=True)
+        project_config = _runtime_config(
+            settings,
+            require_directories=True,
+            refresh_priorities=True,
+        )
         window_policy = _sync_window_policy(project_config)
         with http_client() as client:
             oauth = withings_oauth(settings, client)
@@ -308,7 +338,11 @@ def import_withings_command(
 
     settings = settings_for(root)
     try:
-        project_config = _runtime_config(settings, require_directories=True)
+        project_config = _runtime_config(
+            settings,
+            require_directories=True,
+            refresh_priorities=True,
+        )
         timezone_name = project_config["settings"].get("timezone")
         if not isinstance(timezone_name, str) or not timezone_name.strip():
             raise WithingsExportError("settings.timezone must be an IANA timezone name")
