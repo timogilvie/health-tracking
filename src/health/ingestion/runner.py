@@ -139,15 +139,19 @@ class IngestionRunner:
 
     @staticmethod
     def _source_id(
-        connection: duckdb.DuckDBPyConnection, source: str
+        connection: duckdb.DuckDBPyConnection,
+        source: str,
+        source_type: str = "api",
     ) -> UUID:
+        if source_type not in {"api", "import", "manual"}:
+            raise ValueError(f"invalid source type: {source_type}")
         connection.execute(
             """
             INSERT INTO sources (name, source_type)
-            SELECT ?, 'api'
+            SELECT ?, ?
             WHERE NOT EXISTS (SELECT 1 FROM sources WHERE name = ?)
             """,
-            [source, source],
+            [source, source_type, source],
         )
         row = connection.execute(
             "SELECT source_id FROM sources WHERE name = ?", [source]
@@ -281,7 +285,11 @@ class IngestionRunner:
         requested_end = end or self.now()
         counts = _Counts()
         with connect(self.database) as connection:
-            source_id = self._source_id(connection, connector.name)
+            source_id = self._source_id(
+                connection,
+                connector.name,
+                getattr(connector, "source_type", "api"),
+            )
             requested_start, requested_end = self.window_policy.determine(
                 end=requested_end,
                 last_successful_end=self._last_successful_end(connection, source_id),
@@ -371,7 +379,11 @@ class IngestionRunner:
     ) -> RunResult:
         counts = _Counts()
         with connect(self.database) as connection:
-            source_id = self._source_id(connection, connector.name)
+            source_id = self._source_id(
+                connection,
+                connector.name,
+                getattr(connector, "source_type", "api"),
+            )
             run_id = self._start_run(
                 connection,
                 source_id=source_id,

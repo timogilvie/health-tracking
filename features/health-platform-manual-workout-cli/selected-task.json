@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2981",
+  "title": "Health platform: manual workout CLI",
+  "description": "Implement frictionless manual workout entry, optimized for resistance training when the Oura ring is removed. Required shorthand: health lift 55, plus general workout add with date/time, duration, focus, RPE and notes. Manual workouts are first-class data and participate in canonical weekly totals.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-manual-workout-cli",
+  "contextPath": "features/health-platform-manual-workout-cli/selected-task.json",
+  "selectedAt": "2026-09-11T16:00:00Z"
+}

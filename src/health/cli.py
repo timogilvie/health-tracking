@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -42,6 +42,7 @@ from health.ingestion import (
     SyncWindowPolicy,
 )
 from health.layout import initialize_layout
+from health.manual import ManualWorkoutError, build_manual_workout, record_manual_workout
 from health.oss_policy import PolicyError, validate_repository_policy
 from health.transforms import source_priority_rows, sync_source_priorities
 
@@ -51,11 +52,13 @@ withings_app = typer.Typer(no_args_is_help=True, help="Manage Withings OAuth cre
 oura_app = typer.Typer(no_args_is_help=True, help="Manage Oura OAuth credentials.")
 sync_app = typer.Typer(no_args_is_help=True, help="Synchronize and inspect provider data.")
 import_app = typer.Typer(no_args_is_help=True, help="Import provider export files.")
+workout_app = typer.Typer(no_args_is_help=True, help="Record manual workouts.")
 app.add_typer(auth_app, name="auth")
 app.add_typer(withings_app, name="withings")
 app.add_typer(oura_app, name="oura")
 app.add_typer(sync_app, name="sync")
 app.add_typer(import_app, name="import")
+app.add_typer(workout_app, name="workout")
 RootOption = Annotated[
     Path,
     typer.Option(
@@ -179,6 +182,7 @@ def _sync_window_policy(project_config: dict[str, dict[str, Any]]) -> SyncWindow
 def _safe_sync_error(error: Exception) -> str:
     safe_errors = (
         MigrationError,
+        ManualWorkoutError,
         OuraAPIError,
         OuraOAuthError,
         OuraPayloadError,
@@ -206,6 +210,90 @@ def _safe_sync_error(error: Exception) -> str:
 
 def _iso(value: datetime | None) -> str:
     return value.astimezone(UTC).isoformat() if value is not None else "none"
+
+
+def current_time() -> datetime:
+    """Return the current instant; isolated for deterministic command tests."""
+
+    return datetime.now(UTC)
+
+
+def _parse_local_date(value: str | None) -> date | None:
+    if value is None:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise typer.BadParameter("must be YYYY-MM-DD", param_hint="--date") from exc
+
+
+def _parse_local_time(value: str | None) -> time | None:
+    if value is None:
+        return None
+    try:
+        parsed = time.fromisoformat(value)
+    except ValueError as exc:
+        raise typer.BadParameter("must be HH:MM", param_hint="--time") from exc
+    if parsed.tzinfo is not None:
+        raise typer.BadParameter("must be a local time without an offset", param_hint="--time")
+    return parsed
+
+
+def _record_manual_workout(
+    *,
+    workout_type: str,
+    minutes: int,
+    workout_date: str | None,
+    workout_time: str | None,
+    focus: str | None,
+    rpe: float | None,
+    notes: str | None,
+    root: Path,
+) -> None:
+    settings = settings_for(root)
+    try:
+        project_config = _runtime_config(
+            settings,
+            require_directories=True,
+            refresh_priorities=True,
+        )
+        timezone_name = project_config["settings"].get("timezone")
+        if not isinstance(timezone_name, str) or not timezone_name.strip():
+            raise ManualWorkoutError("settings.timezone must be an IANA timezone name")
+        document = build_manual_workout(
+            workout_type=workout_type,
+            minutes=minutes,
+            timezone_name=timezone_name,
+            workout_date=_parse_local_date(workout_date),
+            workout_time=_parse_local_time(workout_time),
+            focus=focus,
+            rpe=rpe,
+            notes=notes,
+            now=current_time(),
+        )
+        raw_store = RawStore(settings.raw)
+        result = record_manual_workout(
+            document,
+            raw_store=raw_store,
+            runner=IngestionRunner(
+                database=settings.database,
+                raw_store=raw_store,
+                sink=DuckDBCanonicalSink(settings.database),
+            ),
+        )
+    except typer.BadParameter:
+        raise
+    except Exception as exc:
+        typer.echo(f"FAIL Manual workout: {_safe_sync_error(exc)}")
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        "PASS Manual workout: "
+        f"run_id={result.ingestion_run_id} "
+        f"inserted={result.inserted_count} "
+        f"updated={result.updated_count} "
+        f"duplicate={result.duplicate_count}"
+    )
 
 
 def exchange_withings_from_prompt(service: WithingsOAuth) -> None:
@@ -302,6 +390,85 @@ def policy_check(root: RootOption = Path(".")) -> None:
         f"{report.entries} entries, "
         f"{report.packages_verified} locked package(s), "
         f"{report.source_references_verified} source reference(s)"
+    )
+
+
+@app.command("lift")
+def lift_command(
+    minutes: Annotated[
+        int,
+        typer.Argument(min=1, max=1_440, help="Workout duration in minutes."),
+    ],
+    workout_date: Annotated[
+        str | None,
+        typer.Option("--date", help="Local workout date (YYYY-MM-DD)."),
+    ] = None,
+    workout_time: Annotated[
+        str | None,
+        typer.Option("--time", help="Local workout start time (HH:MM)."),
+    ] = None,
+    focus: Annotated[
+        str | None,
+        typer.Option(help="Resistance focus, such as upper, lower, or full body."),
+    ] = None,
+    rpe: Annotated[
+        float | None,
+        typer.Option(min=0, max=10, help="Session effort from 0 to 10."),
+    ] = None,
+    notes: Annotated[str | None, typer.Option(help="Optional private notes.")] = None,
+    root: RootOption = Path("."),
+) -> None:
+    """Record resistance training; for example, `health lift 55`."""
+
+    _record_manual_workout(
+        workout_type="resistance",
+        minutes=minutes,
+        workout_date=workout_date,
+        workout_time=workout_time,
+        focus=focus,
+        rpe=rpe,
+        notes=notes,
+        root=root,
+    )
+
+
+@workout_app.command("add")
+def workout_add(
+    workout_type: Annotated[
+        str,
+        typer.Option("--type", help="Canonical workout type."),
+    ],
+    minutes: Annotated[
+        int,
+        typer.Option("--minutes", min=1, max=1_440, help="Duration in minutes."),
+    ],
+    workout_date: Annotated[
+        str | None,
+        typer.Option("--date", help="Local workout date (YYYY-MM-DD)."),
+    ] = None,
+    workout_time: Annotated[
+        str | None,
+        typer.Option("--time", help="Local workout start time (HH:MM)."),
+    ] = None,
+    focus: Annotated[str | None, typer.Option(help="Optional workout focus.")] = None,
+    rpe: Annotated[
+        float | None,
+        typer.Option(min=0, max=10, help="Session effort from 0 to 10."),
+    ] = None,
+    notes: Annotated[str | None, typer.Option(help="Optional private notes.")] = None,
+    root: RootOption = Path("."),
+) -> None:
+    """Record a dated manual workout of any canonical type."""
+
+    _record_manual_workout(
+        workout_type=workout_type,
+        minutes=minutes,
+        workout_date=workout_date,
+        workout_time=workout_time,
+        focus=focus,
+        rpe=rpe,
+        notes=notes,
+        root=root,
     )
 
 

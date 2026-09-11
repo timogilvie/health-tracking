@@ -140,6 +140,28 @@ git status --short
 git check-ignore -v .env data/health.duckdb data/secrets/withings.tokens.json
 ```
 
+## Manual workouts
+
+Record resistance training with a shorthand designed for times when the Oura ring is removed.
+Without `--date` or `--time`, the workout is treated as ending now:
+
+```bash
+uv run health lift 55 --focus "upper body" --rpe 8 --notes "optional private note"
+```
+
+Use the general command for other canonical workout types. When a date or time is supplied, the
+given local time is the workout start. Supported types are `resistance`, `walking`, `running`,
+`cycling`, `rowing`, `swimming`, `rucking`, `elliptical`, `mobility`, `sports`, and `other`.
+
+```bash
+uv run health workout add --type running --minutes 30 \
+  --date 2026-09-10 --time 07:15 --focus "easy aerobic" --rpe 4
+```
+
+Manual entries are stored as private immutable raw documents before canonical insertion. Repeating
+the exact same entry is duplicate-safe, and manual workouts have presentation priority without
+deleting overlapping Apple Health or Oura records.
+
 ## Architecture invariants
 
 - Raw source bytes are durable before normalization or cursor advancement.
