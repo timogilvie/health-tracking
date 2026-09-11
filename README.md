@@ -217,6 +217,21 @@ medication changes, plus `other`. Optional magnitude, unit, duration, and notes 
 immutable manual document before canonical insertion. Alcohol totals participate in daily
 rollups and all event types are available to longitudinal analysis.
 
+## Descriptive analysis
+
+Generate a private, self-contained HTML report after building enough consistently logged history:
+
+```bash
+uv run health analyze
+```
+
+The report plots alcohol against next-day sleep/recovery/BP, wake-date sleep against same-day
+BP, weight against same-day BP, and exercise against next-day recovery. It shows the paired
+sample size, Pearson correlation, and an approximate 95% confidence interval when the sample is
+large enough. Lagging is explicit in the `analysis_daily_lagged` view. Results are descriptive
+associations—not causal claims, diagnoses, or treatment advice—and the report calls out missing
+data, timing, confounding, repeated observations, and alcohol-logging completeness.
+
 ## Local dashboard
 
 Launch the private dashboard after initialization. It binds only to `127.0.0.1`, sends no-store

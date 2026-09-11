@@ -53,7 +53,7 @@ def test_init_then_doctor_smoke(tmp_path: Path, project_root: Path) -> None:
     diagnosed = runner.invoke(app, ["doctor", "--root", str(tmp_path)])
 
     assert initialized.exit_code == 0, initialized.output
-    assert "applied 5 migration(s)" in initialized.output
+    assert "applied 6 migration(s)" in initialized.output
     assert diagnosed.exit_code == 0, diagnosed.output
     assert "PASS python" in diagnosed.output
     assert "PASS database" in diagnosed.output

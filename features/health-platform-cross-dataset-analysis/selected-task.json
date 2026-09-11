@@ -1,0 +1,12 @@
+{
+  "taskId": "HOK-2993",
+  "title": "Health platform: cross-dataset analysis",
+  "description": "Generate descriptive local analysis for alcohol, sleep, blood pressure, weight, exercise, and recovery with lagged fields, sample sizes, uncertainty, plots, and non-causal guardrails.",
+  "labels": [],
+  "state": "In Progress",
+  "projectName": "Health tracking",
+  "workflowType": "feature",
+  "featureName": "health-platform-cross-dataset-analysis",
+  "contextPath": "features/health-platform-cross-dataset-analysis/selected-task.json",
+  "selectedAt": "2026-09-11T16:13:11Z"
+}

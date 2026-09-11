@@ -12,6 +12,7 @@ import duckdb
 import httpx
 import typer
 
+from health.analysis import analyze, write_report
 from health.auth import FileSecretStore, OAuthStateError, SecretStoreError
 from health.config import HealthSettings, load_project_config
 from health.connectors.apple_health import AppleHealthExportError, import_apple_health_export
@@ -491,6 +492,38 @@ def dashboard_command(
     except Exception as exc:
         typer.echo(f"FAIL Dashboard: {_safe_sync_error(exc)}")
         raise typer.Exit(code=1) from exc
+
+
+@app.command("analyze")
+def analyze_command(
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            dir_okay=False,
+            resolve_path=True,
+            help="Private HTML report path; defaults to data/exports/.",
+        ),
+    ] = None,
+    root: RootOption = Path("."),
+) -> None:
+    """Generate local descriptive cross-dataset analysis with inline plots."""
+
+    settings = settings_for(root)
+    try:
+        _runtime_config(settings, require_directories=True, refresh_priorities=True)
+        generated_at = current_time()
+        target = output or settings.exports / f"analysis-{generated_at:%Y%m%dT%H%M%SZ}.html"
+        report = analyze(settings.database, now=generated_at)
+        path = write_report(report, target)
+    except Exception as exc:
+        typer.echo(f"FAIL Analysis: {_safe_sync_error(exc)}")
+        raise typer.Exit(code=1) from exc
+    ready = sum(relationship.sample_size >= 3 for relationship in report.relationships)
+    typer.echo(
+        "PASS Analysis: "
+        f"report={path} relationships={len(report.relationships)} "
+        f"estimable={ready}"
+    )
 
 
 @app.command("policy-check")
