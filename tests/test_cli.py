@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from shutil import copytree
@@ -12,6 +13,7 @@ from health.cli import app
 from health.db import connect
 
 runner = CliRunner()
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 class FakeWithingsOAuth:
@@ -316,10 +318,12 @@ def test_sync_rejects_invalid_windows_before_network(
         terminal_width=160,
     )
 
+    naive_output = " ".join(ANSI_ESCAPE.sub("", naive.output).split())
+    reversed_output = " ".join(ANSI_ESCAPE.sub("", reversed_window.output).split())
     assert naive.exit_code == 2
-    assert "must include a timezone offset" in naive.output
+    assert "must include a timezone offset" in naive_output
     assert reversed_window.exit_code == 2
-    assert "must not be before --start" in reversed_window.output
+    assert "must not be before --start" in reversed_output
 
 
 def test_sync_failure_output_does_not_expose_unexpected_error_details(
