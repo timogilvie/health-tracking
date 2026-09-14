@@ -32,59 +32,68 @@
     </header>
 
     <main id="main">
-      <section class="hero" id="overview" aria-labelledby="overview-title">
-        <div class="hero-copy">
-          <p class="folio">Private health ledger · <span id="latest-date">loading</span></p>
-          <h1 id="overview-title">Your body,<br><em>read over time.</em></h1>
-          <p class="hero-note">
-            A quiet record of signals—not scores. Look for direction, context, and the long arc.
+      <section class="summary-panel" id="overview" aria-labelledby="summary-title" aria-busy="true">
+        <header class="summary-heading">
+          <div>
+            <p class="folio">Private health ledger · <span id="latest-date">loading</span></p>
+            <h1 id="summary-title">Summary</h1>
+          </div>
+          <p id="summary-status" class="summary-status" role="status" aria-live="polite">
+            Loading latest signals…
           </p>
+        </header>
+
+        <div class="signal-board" aria-label="Latest health signals">
+          <article class="signal signal-primary">
+            <span class="signal-index">01</span>
+            <p>Weight</p>
+            <strong id="summary-weight">—</strong>
+            <small id="summary-weight-date">No reading</small>
+          </article>
+          <article class="signal">
+            <span class="signal-index">02</span>
+            <p>Blood pressure</p>
+            <strong id="summary-bp">—</strong>
+            <small id="summary-bp-date">No reading</small>
+          </article>
+          <article class="signal">
+            <span class="signal-index">03</span>
+            <p>Resting heart rate</p>
+            <strong id="summary-rhr">—</strong>
+            <small id="summary-rhr-date">No reading</small>
+          </article>
+          <article class="signal">
+            <span class="signal-index">04</span>
+            <p>HRV</p>
+            <strong id="summary-hrv">—</strong>
+            <small id="summary-hrv-date">No reading</small>
+          </article>
+          <article class="signal signal-wide">
+            <span class="signal-index">05</span>
+            <p>Last sleep</p>
+            <strong id="summary-sleep">—</strong>
+            <small id="summary-sleep-date">No reading</small>
+          </article>
+        </div>
+      </section>
+
+      <section class="trend-controls" id="trend-controls" aria-labelledby="trends-title" aria-busy="true">
+        <div>
+          <p class="eyebrow">Historical view</p>
+          <h2 id="trends-title">Trends</h2>
         </div>
         <div class="range-panel">
           <span class="range-label">Viewing window</span>
           <div class="range-switch" role="group" aria-label="Trend time range">
-            <button type="button" data-days="7">7D</button>
-            <button type="button" data-days="30">30D</button>
-            <button type="button" data-days="90">90D</button>
-            <button type="button" data-days="365" aria-pressed="true">1Y</button>
+            <button type="button" data-days="7" disabled>7D</button>
+            <button type="button" data-days="30" disabled>30D</button>
+            <button type="button" data-days="90" disabled>90D</button>
+            <button type="button" data-days="365" aria-pressed="true" disabled>1Y</button>
           </div>
           <p id="data-status" class="data-status" role="status" aria-live="polite">
-            Reading the local ledger…
+            Latest signals load first; trend history follows.
           </p>
         </div>
-      </section>
-
-      <section class="signal-board" aria-label="Latest health signals">
-        <article class="signal signal-primary">
-          <span class="signal-index">01</span>
-          <p>Weight</p>
-          <strong id="summary-weight">—</strong>
-          <small id="summary-weight-date">No reading</small>
-        </article>
-        <article class="signal">
-          <span class="signal-index">02</span>
-          <p>Blood pressure</p>
-          <strong id="summary-bp">—</strong>
-          <small id="summary-bp-date">No reading</small>
-        </article>
-        <article class="signal">
-          <span class="signal-index">03</span>
-          <p>Resting heart rate</p>
-          <strong id="summary-rhr">—</strong>
-          <small id="summary-rhr-date">No reading</small>
-        </article>
-        <article class="signal">
-          <span class="signal-index">04</span>
-          <p>HRV</p>
-          <strong id="summary-hrv">—</strong>
-          <small id="summary-hrv-date">No reading</small>
-        </article>
-        <article class="signal signal-wide">
-          <span class="signal-index">05</span>
-          <p>Last sleep</p>
-          <strong id="summary-sleep">—</strong>
-          <small id="summary-sleep-date">No reading</small>
-        </article>
       </section>
 
       <section class="ledger-section" id="weight" aria-labelledby="weight-title">
@@ -187,7 +196,7 @@
         </div>
       </section>
 
-      <section class="ledger-section quality-section" id="quality" aria-labelledby="quality-title">
+      <section class="ledger-section quality-section" id="quality" aria-labelledby="quality-title" aria-busy="true">
         <header class="section-heading">
           <div>
             <span class="section-number">VI</span>

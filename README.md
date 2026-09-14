@@ -318,11 +318,13 @@ uv run health dashboard
 uv run health dashboard --no-open --port 9876
 ```
 
-The overview and dedicated Weight, BP, Sleep, Exercise, Labs, and Data Quality sections use the
-canonical daily, weekly, and rolling views. Switch among 7-day, 30-day, 90-day, and one-year charts
-in the header. The latest values may have different observation dates; each card states its own
-date. Stop the server with Ctrl-C. Weight remains normalized in kilograms in DuckDB and is
-converted to pounds at the dashboard presentation boundary.
+The dashboard progressively loads a small Summary payload first, then trend/lab data, and finally
+the full-ledger Data Quality audit. The Summary panel therefore does not wait for historical
+aggregation. Its latest values may have different observation dates; each card states its own
+date. The 7-day, 30-day, 90-day, and one-year selector sits below Summary because it controls only
+the Weight, BP, Sleep, and Exercise history that follows. Stop the server with Ctrl-C. Weight
+remains normalized in kilograms in DuckDB and is converted to pounds at the dashboard presentation
+boundary.
 
 ## Dataset coverage and freshness
 
