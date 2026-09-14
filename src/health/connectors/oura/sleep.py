@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 from collections.abc import Callable, Iterable
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -225,6 +225,7 @@ class OuraSleepConnector:
 
     name = "oura"
     transform_version = "oura-sleep-v1"
+    heart_rate_max_window = timedelta(days=30)
 
     def __init__(
         self,
@@ -284,12 +285,23 @@ class OuraSleepConnector:
         start: datetime,
         end: datetime,
     ) -> tuple[Callable[[], object], ...]:
-        return (
+        calls: list[Callable[[], object]] = [
             lambda: client.get_sleep_periods(local_start, local_end),
             lambda: client.get_daily_sleep(local_start, local_end),
             lambda: client.get_daily_readiness(local_start, local_end),
-            lambda: client.get_heart_rate(start.isoformat(), end.isoformat()),
-        )
+        ]
+        chunk_start = start
+        while chunk_start < end:
+            chunk_end = min(chunk_start + self.heart_rate_max_window, end)
+            calls.append(
+                lambda chunk_start=chunk_start, chunk_end=chunk_end: client.get_heart_rate(
+                    chunk_start.isoformat(), chunk_end.isoformat()
+                )
+            )
+            chunk_start = chunk_end
+        if start == end:
+            calls.append(lambda: client.get_heart_rate(start.isoformat(), end.isoformat()))
+        return tuple(calls)
 
     def fetch(self, start: datetime, end: datetime) -> Iterable[RawPage]:
         if start.tzinfo is None or start.utcoffset() is None:
@@ -594,11 +606,11 @@ class OuraConnector(OuraSleepConnector):
             start=start,
             end=end,
         )
-        return recovery + (
+        return recovery[:3] + (
             lambda: client.get_daily_activity(local_start, local_end),
             lambda: client.get_workouts(local_start, local_end),
             lambda: client.get_sessions(local_start, local_end),
-        )
+        ) + recovery[3:]
 
     def normalize(self, raw_ref: RawRef, raw_store: RawStore) -> Iterable[NormalizedRecord]:
         manifest = raw_store.manifest(raw_ref)
