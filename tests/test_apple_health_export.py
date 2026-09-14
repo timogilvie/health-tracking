@@ -8,6 +8,7 @@ from zipfile import ZipFile
 import pytest
 from typer.testing import CliRunner
 
+import health.ingestion.canonical_sink as canonical_sink_module
 from health.cli import app
 from health.connectors.apple_health import (
     AppleHealthExportConnector,
@@ -101,6 +102,33 @@ def test_reimport_is_record_idempotent_and_raw_files_remain_immutable(
         == AppleHealthExportConnector.transform_version
         for ref in refs
     )
+
+
+def test_import_commits_records_through_one_bounded_sink_batch(
+    tmp_path: Path,
+    project_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, store, ingestion = _ingestion(tmp_path, project_root)
+    connect_calls = 0
+    real_connect = canonical_sink_module.connect
+
+    def counted_connect(*args, **kwargs):
+        nonlocal connect_calls
+        connect_calls += 1
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(canonical_sink_module, "connect", counted_connect)
+
+    result = import_apple_health_export(
+        _fixture(project_root),
+        raw_store=store,
+        runner=ingestion,
+        now=NOW,
+    )
+
+    assert result.normalized_count == 5
+    assert connect_calls == 1
 
 
 def test_cli_imports_apple_health_without_credentials(

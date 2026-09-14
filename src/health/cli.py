@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Annotated, Any
@@ -45,6 +46,7 @@ from health.dashboard import serve_dashboard
 from health.db import MigrationError, connect, migrate, migration_status
 from health.ingestion import (
     DuckDBCanonicalSink,
+    IngestionProgress,
     IngestionRunner,
     RawStorageError,
     RawStore,
@@ -119,6 +121,27 @@ ExportPathArgument = Annotated[
 
 def settings_for(root: Path) -> HealthSettings:
     return HealthSettings(project_root=root, _env_file=root / ".env")
+
+
+def _progress_reporter(
+    label: str, *, interval_seconds: float = 5.0
+) -> Callable[[IngestionProgress], None]:
+    last_reported = 0.0
+
+    def report(progress: IngestionProgress) -> None:
+        nonlocal last_reported
+        if progress.elapsed_seconds - last_reported < interval_seconds:
+            return
+        last_reported = progress.elapsed_seconds
+        rate = progress.normalized_count / max(progress.elapsed_seconds, 0.001)
+        typer.echo(
+            f"PROGRESS {label}: normalized={progress.normalized_count} "
+            f"inserted={progress.inserted_count} updated={progress.updated_count} "
+            f"duplicate={progress.duplicate_count} "
+            f"elapsed={progress.elapsed_seconds:.0f}s rate={rate:.0f}/s"
+        )
+
+    return report
 
 
 def withings_oauth(settings: HealthSettings, client: httpx.Client) -> WithingsOAuth:
@@ -921,6 +944,7 @@ def import_withings_command(
                 database=settings.database,
                 raw_store=raw_store,
                 sink=DuckDBCanonicalSink(settings.database),
+                progress=_progress_reporter("Withings import"),
             ),
         )
     except Exception as exc:
@@ -961,6 +985,7 @@ def import_apple_health_command(
                 database=settings.database,
                 raw_store=raw_store,
                 sink=DuckDBCanonicalSink(settings.database),
+                progress=_progress_reporter("Apple Health import"),
             ),
         )
     except Exception as exc:
@@ -1021,6 +1046,7 @@ def import_labs_command(
                 database=settings.database,
                 raw_store=raw_store,
                 sink=DuckDBCanonicalSink(settings.database),
+                progress=_progress_reporter("Lab import"),
             ),
         )
     except Exception as exc:

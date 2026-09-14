@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -297,6 +298,117 @@ class DuckDBCanonicalSink:
 
     def __init__(self, database: Path) -> None:
         self.database = database
+        self._source_ids: dict[str, UUID] = {}
+        self._device_ids: dict[tuple[UUID, str], UUID] = {}
+
+    def _source_id(
+        self, connection: duckdb.DuckDBPyConnection, source: str
+    ) -> UUID:
+        source_id = self._source_ids.get(source)
+        if source_id is None:
+            source_id = _source_id(connection, source)
+            self._source_ids[source] = source_id
+        return source_id
+
+    def _device_id(
+        self,
+        connection: duckdb.DuckDBPyConnection,
+        *,
+        source_id: UUID,
+        device: DeviceDescriptor | None,
+    ) -> UUID | None:
+        if device is None:
+            return None
+        key = (source_id, device.vendor_device_id)
+        device_id = self._device_ids.get(key)
+        if device_id is None:
+            device_id = _device_id(connection, source_id=source_id, device=device)
+            if device_id is None:  # pragma: no cover - guarded by device above
+                raise RuntimeError("could not resolve canonical device")
+            self._device_ids[key] = device_id
+        return device_id
+
+    @staticmethod
+    def _payload(
+        record: NormalizedRecord,
+    ) -> (
+        ObservationPayload
+        | BloodPressurePayload
+        | SleepSessionPayload
+        | WorkoutPayload
+        | LabResultPayload
+        | EventPayload
+    ):
+        if record.record_type == "observation":
+            return ObservationPayload.model_validate(record.values)
+        if record.record_type == "blood_pressure":
+            return BloodPressurePayload.model_validate(record.values)
+        if record.record_type == "sleep_session":
+            return SleepSessionPayload.model_validate(record.values)
+        if record.record_type == "workout":
+            return WorkoutPayload.model_validate(record.values)
+        if record.record_type == "lab_result":
+            return LabResultPayload.model_validate(record.values)
+        if record.record_type == "event":
+            return EventPayload.model_validate(record.values)
+        raise ValueError(f"unsupported canonical record type: {record.record_type}")
+
+    def _write_payload(
+        self,
+        connection: duckdb.DuckDBPyConnection,
+        *,
+        payload: (
+            ObservationPayload
+            | BloodPressurePayload
+            | SleepSessionPayload
+            | WorkoutPayload
+            | LabResultPayload
+            | EventPayload
+        ),
+        raw_ref: RawRef,
+        ingestion_run_id: UUID,
+    ) -> WriteDisposition:
+        if isinstance(payload, ObservationPayload):
+            return self._write_observation(
+                connection,
+                observation=payload,
+                raw_ref=raw_ref,
+                ingestion_run_id=ingestion_run_id,
+            )
+        if isinstance(payload, BloodPressurePayload):
+            return self._write_blood_pressure(
+                connection,
+                blood_pressure=payload,
+                raw_ref=raw_ref,
+                ingestion_run_id=ingestion_run_id,
+            )
+        if isinstance(payload, SleepSessionPayload):
+            return self._write_sleep_session(
+                connection,
+                sleep_session=payload,
+                raw_ref=raw_ref,
+                ingestion_run_id=ingestion_run_id,
+            )
+        if isinstance(payload, WorkoutPayload):
+            return self._write_workout(
+                connection,
+                workout=payload,
+                raw_ref=raw_ref,
+                ingestion_run_id=ingestion_run_id,
+            )
+        if isinstance(payload, LabResultPayload):
+            return self._write_lab_result(
+                connection,
+                lab_result=payload,
+                raw_ref=raw_ref,
+                ingestion_run_id=ingestion_run_id,
+            )
+        return self._write_event(
+            connection,
+            event=payload,
+            raw_ref=raw_ref,
+            ingestion_run_id=ingestion_run_id,
+        )
 
     def process(
         self,
@@ -305,79 +417,45 @@ class DuckDBCanonicalSink:
         raw_ref: RawRef,
         ingestion_run_id: UUID,
     ) -> WriteDisposition:
-        if record.record_type == "observation":
-            payload: (
-                ObservationPayload
-                | BloodPressurePayload
-                | SleepSessionPayload
-                | WorkoutPayload
-                | LabResultPayload
-                | EventPayload
-            ) = (
-                ObservationPayload.model_validate(record.values)
+        return tuple(
+            self.process_many(
+                (record,),
+                raw_ref=raw_ref,
+                ingestion_run_id=ingestion_run_id,
             )
-        elif record.record_type == "blood_pressure":
-            payload = BloodPressurePayload.model_validate(record.values)
-        elif record.record_type == "sleep_session":
-            payload = SleepSessionPayload.model_validate(record.values)
-        elif record.record_type == "workout":
-            payload = WorkoutPayload.model_validate(record.values)
-        elif record.record_type == "lab_result":
-            payload = LabResultPayload.model_validate(record.values)
-        elif record.record_type == "event":
-            payload = EventPayload.model_validate(record.values)
-        else:
-            raise ValueError(f"unsupported canonical record type: {record.record_type}")
+        )[0]
+
+    def process_many(
+        self,
+        records: Iterable[NormalizedRecord],
+        *,
+        raw_ref: RawRef,
+        ingestion_run_id: UUID,
+    ) -> tuple[WriteDisposition, ...]:
+        """Validate and commit a bounded record batch in one transaction."""
+
+        payloads = tuple(self._payload(record) for record in records)
+        if not payloads:
+            return ()
         with connect(self.database) as connection:
             connection.execute("BEGIN TRANSACTION")
             try:
-                if isinstance(payload, ObservationPayload):
-                    disposition = self._write_observation(
+                dispositions = tuple(
+                    self._write_payload(
                         connection,
-                        observation=payload,
+                        payload=payload,
                         raw_ref=raw_ref,
                         ingestion_run_id=ingestion_run_id,
                     )
-                elif isinstance(payload, BloodPressurePayload):
-                    disposition = self._write_blood_pressure(
-                        connection,
-                        blood_pressure=payload,
-                        raw_ref=raw_ref,
-                        ingestion_run_id=ingestion_run_id,
-                    )
-                elif isinstance(payload, SleepSessionPayload):
-                    disposition = self._write_sleep_session(
-                        connection,
-                        sleep_session=payload,
-                        raw_ref=raw_ref,
-                        ingestion_run_id=ingestion_run_id,
-                    )
-                elif isinstance(payload, WorkoutPayload):
-                    disposition = self._write_workout(
-                        connection,
-                        workout=payload,
-                        raw_ref=raw_ref,
-                        ingestion_run_id=ingestion_run_id,
-                    )
-                elif isinstance(payload, LabResultPayload):
-                    disposition = self._write_lab_result(
-                        connection,
-                        lab_result=payload,
-                        raw_ref=raw_ref,
-                        ingestion_run_id=ingestion_run_id,
-                    )
-                else:
-                    disposition = self._write_event(
-                        connection,
-                        event=payload,
-                        raw_ref=raw_ref,
-                        ingestion_run_id=ingestion_run_id,
-                    )
+                    for payload in payloads
+                )
                 connection.execute("COMMIT")
-            except Exception:
+            except (Exception, KeyboardInterrupt):
                 connection.execute("ROLLBACK")
+                self._source_ids.clear()
+                self._device_ids.clear()
                 raise
-        return disposition
+        return dispositions
 
     def _write_observation(
         self,
@@ -387,8 +465,8 @@ class DuckDBCanonicalSink:
         raw_ref: RawRef,
         ingestion_run_id: UUID,
     ) -> WriteDisposition:
-        source_id = _source_id(connection, observation.source)
-        device_id = _device_id(
+        source_id = self._source_id(connection, observation.source)
+        device_id = self._device_id(
             connection,
             source_id=source_id,
             device=observation.device,
@@ -496,8 +574,8 @@ class DuckDBCanonicalSink:
         raw_ref: RawRef,
         ingestion_run_id: UUID,
     ) -> WriteDisposition:
-        source_id = _source_id(connection, blood_pressure.source)
-        device_id = _device_id(
+        source_id = self._source_id(connection, blood_pressure.source)
+        device_id = self._device_id(
             connection,
             source_id=source_id,
             device=blood_pressure.device,
@@ -604,8 +682,8 @@ class DuckDBCanonicalSink:
         raw_ref: RawRef,
         ingestion_run_id: UUID,
     ) -> WriteDisposition:
-        source_id = _source_id(connection, sleep_session.source)
-        device_id = _device_id(
+        source_id = self._source_id(connection, sleep_session.source)
+        device_id = self._device_id(
             connection,
             source_id=source_id,
             device=sleep_session.device,
@@ -739,8 +817,8 @@ class DuckDBCanonicalSink:
         raw_ref: RawRef,
         ingestion_run_id: UUID,
     ) -> WriteDisposition:
-        source_id = _source_id(connection, workout.source)
-        device_id = _device_id(
+        source_id = self._source_id(connection, workout.source)
+        device_id = self._device_id(
             connection,
             source_id=source_id,
             device=workout.device,
@@ -852,7 +930,7 @@ class DuckDBCanonicalSink:
         raw_ref: RawRef,
         ingestion_run_id: UUID,
     ) -> WriteDisposition:
-        source_id = _source_id(connection, lab_result.source)
+        source_id = self._source_id(connection, lab_result.source)
         existing = connection.execute(
             """
             SELECT lab_result_id, collected_at, resulted_at, canonical_name,
@@ -958,7 +1036,7 @@ class DuckDBCanonicalSink:
         raw_ref: RawRef,
         ingestion_run_id: UUID,
     ) -> WriteDisposition:
-        source_id = _source_id(connection, event.source)
+        source_id = self._source_id(connection, event.source)
         existing = connection.execute(
             """
             SELECT event_id, event_type, started_at, ended_at, local_date,

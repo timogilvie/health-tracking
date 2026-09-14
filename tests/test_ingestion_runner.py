@@ -1,4 +1,5 @@
 import json
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
@@ -8,6 +9,7 @@ import pytest
 from health.connectors import RawPage
 from health.db import connect, migrate
 from health.ingestion import (
+    IngestionProgress,
     IngestionRunner,
     NormalizedRecord,
     RawRef,
@@ -40,6 +42,53 @@ class FakeSink:
 
     def refresh(self) -> None:
         self.events.append("refresh")
+
+
+class BatchSink(FakeSink):
+    def __init__(self, events: list[str]) -> None:
+        super().__init__(events)
+        self.batch_sizes: list[int] = []
+
+    def process_many(
+        self,
+        records: Iterable[NormalizedRecord],
+        *,
+        raw_ref: RawRef,
+        ingestion_run_id: UUID,
+    ) -> tuple[WriteDisposition, ...]:
+        batch = tuple(records)
+        self.batch_sizes.append(len(batch))
+        self.events.append("batch:" + ",".join(record.identity for record in batch))
+        assert raw_ref.value
+        assert ingestion_run_id
+        dispositions = {
+            "one": WriteDisposition.INSERTED,
+            "two": WriteDisposition.UPDATED,
+            "three": WriteDisposition.DUPLICATE,
+        }
+        return tuple(dispositions[record.identity] for record in batch)
+
+
+class InterruptingBatchSink(FakeSink):
+    def __init__(self, events: list[str]) -> None:
+        super().__init__(events)
+        self.calls = 0
+
+    def process_many(
+        self,
+        records: Iterable[NormalizedRecord],
+        *,
+        raw_ref: RawRef,
+        ingestion_run_id: UUID,
+    ) -> tuple[WriteDisposition, ...]:
+        batch = tuple(records)
+        assert batch
+        assert raw_ref.value
+        assert ingestion_run_id
+        self.calls += 1
+        if self.calls == 1:
+            return (WriteDisposition.INSERTED, WriteDisposition.UPDATED)
+        raise KeyboardInterrupt
 
 
 class FakeConnector:
@@ -179,6 +228,81 @@ def test_second_sync_uses_overlap_window(
     runner.sync(connector)
 
     assert connector.windows[1] == (first_end - timedelta(hours=72), second_end)
+
+
+def test_runner_uses_bounded_batches_and_reports_committed_progress(
+    initialized_database: Path, tmp_path: Path
+) -> None:
+    events: list[str] = []
+    updates: list[IngestionProgress] = []
+    times = iter([100.0, 101.0, 102.0])
+    sink = BatchSink(events)
+    runner = IngestionRunner(
+        database=initialized_database,
+        raw_store=RawStore(tmp_path / "raw"),
+        sink=sink,
+        now=lambda: datetime(2026, 9, 10, 15, tzinfo=UTC),
+        batch_size=2,
+        progress=updates.append,
+        clock=lambda: next(times),
+    )
+
+    result = runner.sync(FakeConnector(events))
+
+    assert sink.batch_sizes == [2, 1]
+    assert [update.normalized_count for update in updates] == [2, 3]
+    assert [update.elapsed_seconds for update in updates] == [1.0, 2.0]
+    assert (
+        updates[-1].inserted_count,
+        updates[-1].updated_count,
+        updates[-1].duplicate_count,
+    ) == (1, 1, 1)
+    assert result.normalized_count == 3
+    assert events == [
+        "authenticate",
+        "fetch",
+        "normalize",
+        "batch:one,two",
+        "batch:three",
+        "refresh",
+    ]
+
+
+def test_runner_rejects_invalid_batch_size(
+    initialized_database: Path, tmp_path: Path
+) -> None:
+    with pytest.raises(ValueError, match="batch_size must be at least one"):
+        IngestionRunner(
+            database=initialized_database,
+            raw_store=RawStore(tmp_path / "raw"),
+            sink=FakeSink([]),
+            batch_size=0,
+        )
+
+
+def test_interrupted_batch_marks_run_failed(
+    initialized_database: Path, tmp_path: Path
+) -> None:
+    events: list[str] = []
+    runner = IngestionRunner(
+        database=initialized_database,
+        raw_store=RawStore(tmp_path / "raw"),
+        sink=InterruptingBatchSink(events),
+        now=lambda: datetime(2026, 9, 10, 15, tzinfo=UTC),
+        batch_size=2,
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        runner.sync(FakeConnector(events))
+
+    with connect(initialized_database, read_only=True) as connection:
+        audit = connection.execute(
+            """
+            SELECT status, normalized_count, inserted_count, error
+            FROM ingestion_runs ORDER BY started_at DESC LIMIT 1
+            """
+        ).fetchone()
+    assert audit == ("failed", 2, 1, "KeyboardInterrupt: ")
 
 
 def test_retryable_fetch_uses_policy(

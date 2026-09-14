@@ -7,6 +7,7 @@ import time
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from itertools import islice
 from pathlib import Path
 from typing import Protocol
 from uuid import UUID
@@ -37,6 +38,14 @@ class CanonicalSink(Protocol):
         raw_ref: RawRef,
         ingestion_run_id: UUID,
     ) -> WriteDisposition: ...
+
+    def process_many(
+        self,
+        records: Iterable[NormalizedRecord],
+        *,
+        raw_ref: RawRef,
+        ingestion_run_id: UUID,
+    ) -> Iterable[WriteDisposition]: ...
 
     def refresh(self) -> None: ...
 
@@ -98,6 +107,17 @@ class RunResult:
     replay: bool
 
 
+@dataclass(frozen=True, slots=True)
+class IngestionProgress:
+    source: str
+    raw_count: int
+    normalized_count: int
+    inserted_count: int
+    updated_count: int
+    duplicate_count: int
+    elapsed_seconds: float
+
+
 @dataclass(slots=True)
 class _Counts:
     raw: int = 0
@@ -128,7 +148,12 @@ class IngestionRunner:
         retry_policy: RetryPolicy | None = None,
         now: Callable[[], datetime] | None = None,
         sleeper: Callable[[float], None] = time.sleep,
+        batch_size: int = 5_000,
+        progress: Callable[[IngestionProgress], None] | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        if batch_size < 1:
+            raise ValueError("batch_size must be at least one")
         self.database = database
         self.raw_store = raw_store
         self.sink = sink
@@ -136,6 +161,9 @@ class IngestionRunner:
         self.retry_policy = retry_policy or RetryPolicy()
         self.now = now or (lambda: datetime.now(UTC))
         self.sleeper = sleeper
+        self.batch_size = batch_size
+        self.progress = progress
+        self.clock = clock
 
     @staticmethod
     def _source_id(
@@ -224,6 +252,30 @@ class IngestionRunner:
         )
 
     @staticmethod
+    def _checkpoint_run(
+        connection: duckdb.DuckDBPyConnection,
+        *,
+        run_id: UUID,
+        counts: _Counts,
+    ) -> None:
+        connection.execute(
+            """
+            UPDATE ingestion_runs
+            SET raw_count = ?, normalized_count = ?, inserted_count = ?,
+                updated_count = ?, duplicate_count = ?
+            WHERE ingestion_run_id = ?
+            """,
+            [
+                counts.raw,
+                counts.normalized,
+                counts.inserted,
+                counts.updated,
+                counts.duplicate,
+                run_id,
+            ],
+        )
+
+    @staticmethod
     def _advance_state(
         connection: duckdb.DuckDBPyConnection,
         *,
@@ -263,17 +315,49 @@ class IngestionRunner:
         raw_ref: RawRef,
         run_id: UUID,
         counts: _Counts,
+        source: str,
+        audit_connection: duckdb.DuckDBPyConnection,
+        started_at: float,
     ) -> None:
         self.raw_store.read(raw_ref)
-        for record in connector.normalize(raw_ref, self.raw_store):
-            counts.normalized += 1
-            counts.record(
-                self.sink.process(
-                    record,
-                    raw_ref=raw_ref,
-                    ingestion_run_id=run_id,
+        records = iter(connector.normalize(raw_ref, self.raw_store))
+        process_many = getattr(self.sink, "process_many", None)
+        while batch := tuple(islice(records, self.batch_size)):
+            if callable(process_many):
+                dispositions = tuple(
+                    process_many(
+                        batch,
+                        raw_ref=raw_ref,
+                        ingestion_run_id=run_id,
+                    )
                 )
-            )
+                if len(dispositions) != len(batch):
+                    raise RuntimeError("canonical sink returned the wrong batch result count")
+            else:
+                dispositions = tuple(
+                    self.sink.process(
+                        record,
+                        raw_ref=raw_ref,
+                        ingestion_run_id=run_id,
+                    )
+                    for record in batch
+                )
+            counts.normalized += len(batch)
+            for disposition in dispositions:
+                counts.record(disposition)
+            self._checkpoint_run(audit_connection, run_id=run_id, counts=counts)
+            if self.progress is not None:
+                self.progress(
+                    IngestionProgress(
+                        source=source,
+                        raw_count=counts.raw,
+                        normalized_count=counts.normalized,
+                        inserted_count=counts.inserted,
+                        updated_count=counts.updated,
+                        duplicate_count=counts.duplicate,
+                        elapsed_seconds=self.clock() - started_at,
+                    )
+                )
 
     def sync(
         self,
@@ -284,6 +368,7 @@ class IngestionRunner:
     ) -> RunResult:
         requested_end = end or self.now()
         counts = _Counts()
+        started_at = self.clock()
         with connect(self.database) as connection:
             source_id = self._source_id(
                 connection,
@@ -333,7 +418,13 @@ class IngestionRunner:
                     )
                     counts.raw += 1
                     self._process_ref(
-                        connector, raw_ref=raw_ref, run_id=run_id, counts=counts
+                        connector,
+                        raw_ref=raw_ref,
+                        run_id=run_id,
+                        counts=counts,
+                        source=connector.name,
+                        audit_connection=connection,
+                        started_at=started_at,
                     )
                 self.sink.refresh()
                 connection.execute("BEGIN TRANSACTION")
@@ -351,7 +442,7 @@ class IngestionRunner:
                 except Exception:
                     connection.execute("ROLLBACK")
                     raise
-            except Exception as exc:
+            except (Exception, KeyboardInterrupt) as exc:
                 self._finish_run(
                     connection,
                     run_id=run_id,
@@ -378,6 +469,7 @@ class IngestionRunner:
         self, connector: Connector, raw_refs: Iterable[RawRef]
     ) -> RunResult:
         counts = _Counts()
+        started_at = self.clock()
         with connect(self.database) as connection:
             source_id = self._source_id(
                 connection,
@@ -395,13 +487,19 @@ class IngestionRunner:
                 for raw_ref in raw_refs:
                     counts.raw += 1
                     self._process_ref(
-                        connector, raw_ref=raw_ref, run_id=run_id, counts=counts
+                        connector,
+                        raw_ref=raw_ref,
+                        run_id=run_id,
+                        counts=counts,
+                        source=connector.name,
+                        audit_connection=connection,
+                        started_at=started_at,
                     )
                 self.sink.refresh()
                 self._finish_run(
                     connection, run_id=run_id, counts=counts, status="succeeded"
                 )
-            except Exception as exc:
+            except (Exception, KeyboardInterrupt) as exc:
                 self._finish_run(
                     connection,
                     run_id=run_id,

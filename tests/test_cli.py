@@ -9,8 +9,9 @@ import pytest
 from typer.testing import CliRunner
 
 import health.cli as health_cli
-from health.cli import app
+from health.cli import _progress_reporter, app
 from health.db import connect
+from health.ingestion import IngestionProgress
 
 runner = CliRunner()
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -383,3 +384,36 @@ def test_sync_status_distinguishes_active_and_failed_runs_without_error_detail(
     expected_error = "RuntimeError" if state == "failed" else "none"
     assert f"error={expected_error}" in result.output
     assert "never-print-this" not in result.output
+
+
+def test_import_progress_reports_counts_rate_and_elapsed_without_values(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    report = _progress_reporter("Apple Health import", interval_seconds=5)
+    before_interval = IngestionProgress(
+        source="apple_health",
+        raw_count=1,
+        normalized_count=20_000,
+        inserted_count=19_900,
+        updated_count=25,
+        duplicate_count=75,
+        elapsed_seconds=4,
+    )
+    at_interval = IngestionProgress(
+        source="apple_health",
+        raw_count=1,
+        normalized_count=25_000,
+        inserted_count=24_875,
+        updated_count=25,
+        duplicate_count=100,
+        elapsed_seconds=5,
+    )
+
+    report(before_interval)
+    assert capsys.readouterr().out == ""
+    report(at_interval)
+
+    assert capsys.readouterr().out == (
+        "PROGRESS Apple Health import: normalized=25000 inserted=24875 "
+        "updated=25 duplicate=100 elapsed=5s rate=5000/s\n"
+    )

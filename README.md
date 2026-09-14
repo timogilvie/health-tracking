@@ -171,6 +171,13 @@ uv run health import apple-health ~/Downloads/export.zip
 uv run health duplicates refresh
 ```
 
+Large Apple archives are streamed and committed in bounded 5,000-record batches. Imports that
+run longer than five seconds print periodic `PROGRESS` lines with normalized, inserted, updated,
+and duplicate counts, elapsed time, and throughput. The total record count is not known until the
+XML stream reaches the end, so progress reports show completed records rather than a potentially
+misleading percentage. Batch counts are checkpointed in `ingestion_runs`, and stable record IDs
+make a retry safe if an import is interrupted.
+
 If the archive has a different name or location, type `uv run health import apple-health `
 (including the trailing space), drag the ZIP from Finder into Terminal, and press Return. See
 [Apple's current export instructions](https://support.apple.com/guide/iphone/share-your-health-data-iph5ede58c3d/ios).

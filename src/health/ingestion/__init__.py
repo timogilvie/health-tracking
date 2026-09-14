@@ -13,6 +13,7 @@ from health.ingestion.models import NormalizedRecord, WriteDisposition
 from health.ingestion.raw_store import RawIntegrityError, RawRef, RawStorageError, RawStore
 from health.ingestion.runner import (
     CanonicalSink,
+    IngestionProgress,
     IngestionRunner,
     RetryableIngestionError,
     RetryPolicy,
@@ -25,6 +26,7 @@ __all__ = [
     "CanonicalSink",
     "DuckDBCanonicalSink",
     "EventPayload",
+    "IngestionProgress",
     "IngestionRunner",
     "LabResultPayload",
     "NormalizedRecord",
