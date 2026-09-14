@@ -9,6 +9,10 @@ Release readiness does not mean the repository or any package has been approved 
 The distributable core excludes credentials, provider application registrations, real health
 data, trademarks, and any hosted-service layer. See [SUPPORT.md](SUPPORT.md) before using it.
 
+Use of the software is subject to the [Terms of Service](TERMS.md). The
+[Privacy Policy](PRIVACY.md) explains its local-only data handling: the project maintainers do not
+collect, receive, use, sell, or share your health data.
+
 ## Development
 
 Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
