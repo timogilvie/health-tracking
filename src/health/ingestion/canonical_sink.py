@@ -296,6 +296,8 @@ def _metadata(value: Any) -> dict[str, Any]:
 class DuckDBCanonicalSink:
     """Persist canonical records and classify overlap writes deterministically."""
 
+    observation_sql_batch_size = 250
+
     def __init__(self, database: Path) -> None:
         self.database = database
         self._source_ids: dict[str, UUID] = {}
@@ -440,15 +442,23 @@ class DuckDBCanonicalSink:
         with connect(self.database) as connection:
             connection.execute("BEGIN TRANSACTION")
             try:
-                dispositions = tuple(
-                    self._write_payload(
+                if all(isinstance(payload, ObservationPayload) for payload in payloads):
+                    dispositions = self._write_observations(
                         connection,
-                        payload=payload,
+                        observations=payloads,
                         raw_ref=raw_ref,
                         ingestion_run_id=ingestion_run_id,
                     )
-                    for payload in payloads
-                )
+                else:
+                    dispositions = tuple(
+                        self._write_payload(
+                            connection,
+                            payload=payload,
+                            raw_ref=raw_ref,
+                            ingestion_run_id=ingestion_run_id,
+                        )
+                        for payload in payloads
+                    )
                 connection.execute("COMMIT")
             except (Exception, KeyboardInterrupt):
                 connection.execute("ROLLBACK")
@@ -456,6 +466,177 @@ class DuckDBCanonicalSink:
                 self._device_ids.clear()
                 raise
         return dispositions
+
+    @staticmethod
+    def _observation_semantic(
+        observation: ObservationPayload,
+        device_id: UUID | None,
+    ) -> tuple[Any, ...]:
+        return (
+            observation.observed_at,
+            observation.observed_until,
+            observation.value,
+            observation.unit,
+            device_id,
+            observation.original_metric,
+            observation.original_value,
+            observation.original_unit,
+            observation.quality,
+            observation.timezone,
+            observation.local_date,
+            observation.transform_version,
+            observation.metadata,
+        )
+
+    def _write_observations(
+        self,
+        connection: duckdb.DuckDBPyConnection,
+        *,
+        observations: tuple[
+            ObservationPayload
+            | BloodPressurePayload
+            | SleepSessionPayload
+            | WorkoutPayload
+            | LabResultPayload
+            | EventPayload,
+            ...,
+        ],
+        raw_ref: RawRef,
+        ingestion_run_id: UUID,
+    ) -> tuple[WriteDisposition, ...]:
+        typed = tuple(
+            observation
+            for observation in observations
+            if isinstance(observation, ObservationPayload)
+        )
+        keys = tuple((item.source_record_id, item.metric) for item in typed)
+        sources = {item.source for item in typed}
+        if (
+            len(typed) != len(observations)
+            or len(sources) != 1
+            or any(item.device is not None for item in typed)
+            or len(set(keys)) != len(keys)
+        ):
+            return tuple(
+                self._write_observation(
+                    connection,
+                    observation=item,
+                    raw_ref=raw_ref,
+                    ingestion_run_id=ingestion_run_id,
+                )
+                for item in typed
+            )
+
+        source_id = self._source_id(connection, typed[0].source)
+        dispositions: list[WriteDisposition] = []
+        for offset in range(0, len(typed), self.observation_sql_batch_size):
+            batch = typed[offset : offset + self.observation_sql_batch_size]
+            merge_rows: list[list[Any]] = []
+            for observation in batch:
+                metadata = {
+                    **observation.metadata,
+                    "ingestion_run_id": str(ingestion_run_id),
+                }
+                merge_rows.append(
+                    [
+                        observation.metric,
+                        observation.observed_at,
+                        observation.observed_until,
+                        observation.value,
+                        observation.unit,
+                        source_id,
+                        observation.source_record_id,
+                        observation.original_metric,
+                        observation.original_value,
+                        observation.original_unit,
+                        observation.quality,
+                        observation.timezone,
+                        observation.local_date,
+                        raw_ref.value,
+                        observation.transform_version,
+                        json.dumps(metadata, sort_keys=True),
+                        json.dumps(observation.metadata, sort_keys=True),
+                    ]
+                )
+            value_placeholder = f"({', '.join('?' for _column in range(17))})"
+            actions = connection.execute(
+                f"""
+                MERGE INTO observations AS target
+                USING (
+                    VALUES {', '.join(value_placeholder for _row in merge_rows)}
+                ) AS incoming (
+                    metric, observed_at, observed_until, value, unit, source_id,
+                    source_record_id, original_metric, original_value, original_unit,
+                    quality, timezone, local_date, raw_file, transform_version,
+                    metadata, semantic_metadata
+                )
+                ON target.source_id = incoming.source_id
+                   AND target.source_record_id = incoming.source_record_id
+                   AND target.metric = incoming.metric
+                WHEN MATCHED AND (
+                    target.observed_at IS DISTINCT FROM incoming.observed_at OR
+                    target.observed_until IS DISTINCT FROM incoming.observed_until OR
+                    target.value IS DISTINCT FROM incoming.value OR
+                    target.unit IS DISTINCT FROM incoming.unit OR
+                    target.device_id IS NOT NULL OR
+                    target.original_metric IS DISTINCT FROM incoming.original_metric OR
+                    target.original_value IS DISTINCT FROM incoming.original_value OR
+                    target.original_unit IS DISTINCT FROM incoming.original_unit OR
+                    target.quality IS DISTINCT FROM incoming.quality OR
+                    target.timezone IS DISTINCT FROM incoming.timezone OR
+                    target.local_date IS DISTINCT FROM incoming.local_date OR
+                    target.transform_version IS DISTINCT FROM incoming.transform_version OR
+                    json_merge_patch(
+                        target.metadata,
+                        '{{"ingestion_run_id": null}}'::JSON
+                    ) IS DISTINCT FROM json(incoming.semantic_metadata::JSON)
+                ) THEN UPDATE SET
+                    observed_at = incoming.observed_at,
+                    observed_until = incoming.observed_until,
+                    value = incoming.value,
+                    unit = incoming.unit,
+                    device_id = NULL,
+                    original_metric = incoming.original_metric,
+                    original_value = incoming.original_value,
+                    original_unit = incoming.original_unit,
+                    quality = incoming.quality,
+                    timezone = incoming.timezone,
+                    local_date = incoming.local_date,
+                    raw_file = incoming.raw_file,
+                    transform_version = incoming.transform_version,
+                    metadata = incoming.metadata
+                WHEN NOT MATCHED THEN INSERT (
+                    metric, observed_at, observed_until, value, unit, source_id,
+                    source_record_id, device_id, original_metric, original_value,
+                    original_unit, quality, timezone, local_date, raw_file,
+                    transform_version, metadata
+                ) VALUES (
+                    incoming.metric, incoming.observed_at, incoming.observed_until,
+                    incoming.value, incoming.unit, incoming.source_id,
+                    incoming.source_record_id, NULL, incoming.original_metric,
+                    incoming.original_value, incoming.original_unit, incoming.quality,
+                    incoming.timezone, incoming.local_date, incoming.raw_file,
+                    incoming.transform_version, incoming.metadata
+                )
+                RETURNING merge_action, source_record_id, metric
+                """,
+                [value for row in merge_rows for value in row],
+            ).fetchall()
+            action_by_key = {
+                (source_record_id, metric): action
+                for action, source_record_id, metric in actions
+            }
+            for observation in batch:
+                key = (observation.source_record_id, observation.metric)
+                action = action_by_key.get(key)
+                dispositions.append(
+                    WriteDisposition.INSERTED
+                    if action == "INSERT"
+                    else WriteDisposition.UPDATED
+                    if action == "UPDATE"
+                    else WriteDisposition.DUPLICATE
+                )
+        return tuple(dispositions)
 
     def _write_observation(
         self,
@@ -485,21 +666,7 @@ class DuckDBCanonicalSink:
             **observation.metadata,
             "ingestion_run_id": str(ingestion_run_id),
         }
-        semantic = (
-            observation.observed_at,
-            observation.observed_until,
-            observation.value,
-            observation.unit,
-            device_id,
-            observation.original_metric,
-            observation.original_value,
-            observation.original_unit,
-            observation.quality,
-            observation.timezone,
-            observation.local_date,
-            observation.transform_version,
-            observation.metadata,
-        )
+        semantic = self._observation_semantic(observation, device_id)
         if existing is not None:
             existing_metadata = _metadata(existing[13])
             existing_metadata.pop("ingestion_run_id", None)

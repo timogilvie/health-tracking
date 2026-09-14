@@ -1,6 +1,7 @@
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -266,6 +267,40 @@ def test_oura_sleep_requires_aware_sync_window(project_root: Path) -> None:
         list(connector.fetch(datetime(2026, 9, 10), END))
 
 
+def test_oura_heart_rate_requests_are_split_into_thirty_day_windows(
+    project_root: Path,
+) -> None:
+    connector, _oauth, session = make_connector(project_root)
+    start = datetime(2026, 6, 1, tzinfo=UTC)
+    end = datetime(2026, 8, 1, tzinfo=UTC)
+
+    list(connector.fetch(start, end))
+
+    calls = [
+        params
+        for path, params in session.calls
+        if path == "/v2/usercollection/heartrate"
+    ]
+    assert len(calls) == 3
+    windows = [
+        (
+            datetime.fromisoformat(params["start_datetime"]),
+            datetime.fromisoformat(params["end_datetime"]),
+        )
+        for params in calls
+    ]
+    assert windows[0][0] == start
+    assert windows[-1][1] == end
+    assert all(
+        window_end - window_start <= connector.heart_rate_max_window
+        for window_start, window_end in windows
+    )
+    assert all(
+        previous_end == next_start
+        for (_previous_start, previous_end), (next_start, _next_end) in pairwise(windows)
+    )
+
+
 def test_captured_query_metadata_has_no_access_token(project_root: Path) -> None:
     connector, _oauth, _session = make_connector(project_root)
 
@@ -295,6 +330,10 @@ def test_complete_oura_sync_preserves_activity_coverage_workouts_and_sessions(
     assert result.raw_count == 9
     assert result.normalized_count == 21
     assert result.inserted_count == 21
+    called_paths = [path for path, _params in session.calls]
+    assert called_paths.index("/v2/usercollection/daily_activity") < called_paths.index(
+        "/v2/usercollection/heartrate"
+    )
     workout_calls = [
         params
         for path, params in session.calls
