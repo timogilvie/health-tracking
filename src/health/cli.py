@@ -12,6 +12,7 @@ from uuid import UUID
 import duckdb
 import httpx
 import typer
+from pydantic import ValidationError
 
 from health.analysis import analyze, write_report
 from health.auth import FileSecretStore, OAuthStateError, SecretStoreError
@@ -264,6 +265,8 @@ def _safe_sync_error(error: Exception) -> str:
         return "database error"
     if isinstance(error, OSError):
         return "filesystem error"
+    if isinstance(error, ValidationError):
+        return "data validation error"
     if isinstance(error, ValueError):
         return "configuration error"
     return f"unexpected {type(error).__name__}"
