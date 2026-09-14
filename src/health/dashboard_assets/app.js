@@ -1,6 +1,10 @@
 "use strict";
 
-const state = { payload: null, days: 365 };
+const state = {
+  payload: { latest_date: null, summary: {}, daily: [], weekly: [], rolling: [], labs: [], quality: null },
+  days: 365,
+  trendsLoaded: false,
+};
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 const byId = (id) => document.getElementById(id);
@@ -377,39 +381,79 @@ function renderQuality() {
   }));
 }
 
-function render() {
+function renderTrends() {
   const rows = rowsInWindow(state.payload.daily);
-  renderSummary();
   renderWeight(rows);
   renderPressure(rows);
   renderRecovery(rows);
   renderExercise(rows);
   renderLabs();
-  renderQuality();
-  byId("latest-date").textContent = state.payload.latest_date ? `through ${shortDate(state.payload.latest_date)}` : "no data yet";
   byId("data-status").textContent = state.payload.latest_date
     ? `${rows.length} calendar days shown · source priorities applied locally`
     : "The dashboard is ready; import data to begin the ledger.";
 }
 
 function setRange(days) {
+  if (!state.trendsLoaded) return;
   state.days = days;
   document.querySelectorAll("[data-days]").forEach((button) => {
     button.setAttribute("aria-pressed", Number(button.dataset.days) === days ? "true" : "false");
   });
-  render();
+  renderTrends();
 }
 
-async function load() {
+async function fetchPayload(path) {
+  const response = await fetch(path, { headers: { Accept: "application/json" } });
+  if (!response.ok) throw new Error(`Dashboard request failed: ${path}`);
+  return response.json();
+}
+
+async function loadSummary() {
   try {
-    const response = await fetch("/api/dashboard", { headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error("Dashboard request failed");
-    state.payload = await response.json();
-    render();
+    Object.assign(state.payload, await fetchPayload("/api/dashboard/summary"));
+    renderSummary();
+    byId("latest-date").textContent = state.payload.latest_date ? `through ${shortDate(state.payload.latest_date)}` : "no data yet";
+    byId("summary-status").textContent = state.payload.latest_date
+      ? "Latest available readings loaded. Trend history is loading below."
+      : "No readings yet. Import data to begin the ledger.";
+  } catch (_error) {
+    byId("summary-status").textContent = "Could not load the latest signals. Run health doctor and retry.";
+  } finally {
+    byId("overview").setAttribute("aria-busy", "false");
+  }
+}
+
+async function loadTrends() {
+  byId("data-status").textContent = "Loading trend history…";
+  try {
+    Object.assign(state.payload, await fetchPayload("/api/dashboard/trends"));
+    state.trendsLoaded = true;
+    document.querySelectorAll("[data-days]").forEach((button) => { button.disabled = false; });
+    renderTrends();
   } catch (_error) {
     byId("data-status").textContent = "Could not read the local health database. Run health doctor and retry.";
     document.querySelectorAll(".line-chart, .bar-chart").forEach((chart) => emptyChart(chart, "Dashboard data unavailable"));
+  } finally {
+    byId("trend-controls").setAttribute("aria-busy", "false");
   }
+}
+
+async function loadQuality() {
+  try {
+    Object.assign(state.payload, await fetchPayload("/api/dashboard/quality"));
+    renderQuality();
+  } catch (_error) {
+    byId("quality-state").textContent = "Unavailable";
+    byId("quality-state").dataset.state = "attention";
+  } finally {
+    byId("quality").setAttribute("aria-busy", "false");
+  }
+}
+
+async function load() {
+  await loadSummary();
+  await loadTrends();
+  await loadQuality();
 }
 
 document.querySelectorAll("[data-days]").forEach((button) => {

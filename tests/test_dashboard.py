@@ -11,7 +11,14 @@ from typer.testing import CliRunner
 import health.cli as health_cli
 from health.cli import app
 from health.config import HealthSettings, load_project_config
-from health.dashboard import ASSET_ROOT, create_dashboard_server, dashboard_payload
+from health.dashboard import (
+    ASSET_ROOT,
+    create_dashboard_server,
+    dashboard_payload,
+    dashboard_quality_payload,
+    dashboard_summary_payload,
+    dashboard_trends_payload,
+)
 from health.db import connect, migrate
 from health.transforms import sync_source_priorities
 
@@ -144,6 +151,34 @@ def test_dashboard_payload_exposes_current_trends_rollups_and_labs(
         dashboard_payload(database, days=14)
 
 
+def test_dashboard_progressive_payloads_render_summary_before_heavier_data(
+    tmp_path: Path,
+    project_root: Path,
+) -> None:
+    database = initialized_database(tmp_path, project_root)
+    seed_dashboard(database)
+
+    summary = dashboard_summary_payload(database)
+    trends = dashboard_trends_payload(database, days=7)
+    quality = dashboard_quality_payload(database)
+
+    assert set(summary) == {"generated_at", "latest_date", "summary"}
+    assert summary["summary"]["weight"]["value"] == pytest.approx(174.165, abs=0.001)
+    assert summary["summary"]["sleep"]["value"] == 450
+    assert "daily" not in summary
+    assert "quality" not in summary
+    assert len(trends["daily"]) == 2
+    assert trends["weekly"][0]["resistance_minutes_total"] == 55
+    assert {row["window_days"] for row in trends["rolling"]} == {7, 30, 90, 365}
+    for window in trends["rolling"]:
+        assert window["calendar_days"] == 2
+        assert window["weight_lb_avg"] == pytest.approx(175.267, abs=0.001)
+        assert window["systolic_mmhg_avg"] == 118
+        assert window["total_sleep_minutes_avg"] == 450
+        assert window["resistance_minutes_total"] == 55
+    assert set(quality) == {"generated_at", "quality"}
+
+
 def test_dashboard_payload_handles_an_empty_database(
     tmp_path: Path,
     project_root: Path,
@@ -176,13 +211,19 @@ def test_dashboard_server_is_loopback_only_and_sets_private_security_headers(
             assert response.headers["X-Frame-Options"] == "DENY"
             assert "default-src 'none'" in response.headers["Content-Security-Policy"]
             assert "Private health ledger" in html
-        request = Request(
-            f"http://127.0.0.1:{port}/api/dashboard",
-            headers={"Accept": "application/json"},
-        )
-        with urlopen(request, timeout=3) as response:
-            assert response.headers["Content-Type"] == "application/json"
-            assert json.loads(response.read())["daily"] == []
+        for endpoint, expected_key in (
+            ("/api/dashboard/summary", "summary"),
+            ("/api/dashboard/trends", "daily"),
+            ("/api/dashboard/quality", "quality"),
+            ("/api/dashboard", "daily"),
+        ):
+            request = Request(
+                f"http://127.0.0.1:{port}{endpoint}",
+                headers={"Accept": "application/json"},
+            )
+            with urlopen(request, timeout=3) as response:
+                assert response.headers["Content-Type"] == "application/json"
+                assert expected_key in json.loads(response.read())
         with pytest.raises(HTTPError) as error:
             urlopen(f"http://127.0.0.1:{port}/private-file", timeout=3)
         assert error.value.code == 404
@@ -208,6 +249,12 @@ def test_dashboard_assets_have_accessible_sections_and_no_remote_dependencies() 
     assert 'id="quality-coverage-body"' in html
     assert 'id="quality-import-body"' in html
     assert "renderQuality" in javascript
+    assert "Your body" not in html
+    assert "A quiet record" not in html
+    assert html.index('class="signal-board"') < html.index('class="trend-controls"')
+    assert javascript.index('await loadSummary()') < javascript.index('await loadTrends()')
+    for endpoint in ("summary", "trends", "quality"):
+        assert f'/api/dashboard/{endpoint}' in javascript
 
 
 def test_dashboard_cli_validates_project_and_passes_private_server_options(
