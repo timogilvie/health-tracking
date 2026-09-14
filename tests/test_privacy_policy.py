@@ -22,6 +22,7 @@ def test_repository_privacy_check_passes(project_root: Path) -> None:
 
     assert report.tracked_files > 0
     assert report.text_files_scanned > 0
+    assert report.history_blobs_scanned > 0
 
 
 def test_privacy_check_cli(project_root: Path) -> None:
