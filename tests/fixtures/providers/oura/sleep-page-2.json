@@ -3,7 +3,7 @@
     {
       "id": "nap-2026-09-10",
       "average_breath": 14.1,
-      "average_heart_rate": 57,
+      "average_heart_rate": 0,
       "average_hrv": 39,
       "awake_time": 300,
       "bedtime_end": "2026-09-10T15:00:00-04:00",

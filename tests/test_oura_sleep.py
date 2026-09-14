@@ -207,10 +207,19 @@ def test_oura_sleep_sync_paginates_stores_raw_and_populates_canonical_tables(
             FROM daily_health WHERE local_date = '2026-09-10'
             """
         ).fetchone()
+        nap_metadata = json.loads(
+            connection.execute(
+                """
+                SELECT metadata FROM sleep_sessions
+                WHERE source_record_id = 'nap-2026-09-10'
+                """
+            ).fetchone()[0]
+        )
     assert sessions == [
         ("sleep-2026-09-09", datetime(2026, 9, 10).date(), 26400, 91.0, 52.5, 47.0),
-        ("nap-2026-09-10", datetime(2026, 9, 10).date(), 2100, 87.5, 57.0, 39.0),
+        ("nap-2026-09-10", datetime(2026, 9, 10).date(), 2100, 87.5, None, 39.0),
     ]
+    assert "non_positive_average_heart_rate" in nap_metadata["quality_reasons"]
     assert observations == [
         ("heart_rate_bpm", 54.0, "valid"),
         ("heart_rate_bpm", 72.0, "valid"),

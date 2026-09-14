@@ -153,6 +153,21 @@ def _optional_number(value: Any, *, field_name: str) -> float | None:
     return number
 
 
+def _optional_positive_number(
+    value: Any,
+    *,
+    field_name: str,
+    quality_reasons: list[str],
+) -> float | None:
+    """Treat provider zero sentinels as missing for positive-only vital signs."""
+
+    number = _optional_number(value, field_name=field_name)
+    if number is not None and number <= 0:
+        quality_reasons.append(f"non_positive_{field_name}")
+        return None
+    return number
+
+
 def _optional_duration(value: Any, *, field_name: str) -> int | None:
     number = _optional_number(value, field_name=field_name)
     if number is None:
@@ -387,21 +402,24 @@ class OuraSleepConnector:
                             field_name="latency",
                         ),
                         "efficiency_pct": efficiency,
-                        "resting_hr_bpm": _optional_number(
+                        "resting_hr_bpm": _optional_positive_number(
                             record.get("average_heart_rate"),
                             field_name="average_heart_rate",
+                            quality_reasons=quality_reasons,
                         ),
-                        "lowest_hr_bpm": _optional_number(
+                        "lowest_hr_bpm": _optional_positive_number(
                             record.get("lowest_heart_rate"),
                             field_name="lowest_heart_rate",
+                            quality_reasons=quality_reasons,
                         ),
                         "average_hrv_rmssd_ms": _optional_number(
                             record.get("average_hrv"),
                             field_name="average_hrv",
                         ),
-                        "respiratory_rate": _optional_number(
+                        "respiratory_rate": _optional_positive_number(
                             record.get("average_breath"),
                             field_name="average_breath",
+                            quality_reasons=quality_reasons,
                         ),
                         "sleep_score": None,
                         "source": self.name,
