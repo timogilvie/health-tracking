@@ -36,6 +36,20 @@ function duration(value) {
   return hours ? `${hours}h ${String(remainder).padStart(2, "0")}m` : `${remainder}m`;
 }
 
+function elapsed(value) {
+  if (value === null || value === undefined) return "—";
+  const seconds = Number(value);
+  if (seconds < 60) return `${number(seconds, 1)}s`;
+  if (seconds < 3600) return `${number(seconds / 60, 1)}m`;
+  return `${number(seconds / 3600, 1)}h`;
+}
+
+function metricName(value) {
+  const [kind, detail] = value.split(":", 2);
+  const label = detail ? `${kind} · ${detail}` : kind;
+  return label.replaceAll("_", " ");
+}
+
 function cutoffDate(latest, days) {
   const value = parseDay(latest);
   value.setUTCDate(value.getUTCDate() - days + 1);
@@ -265,6 +279,104 @@ function renderLabs() {
   body.replaceChildren(...rows);
 }
 
+function renderQuality() {
+  const quality = state.payload.quality;
+  const statusLabels = {
+    clear: "Clear",
+    review: "Review",
+    attention: "Attention",
+    empty: "Awaiting data",
+  };
+  const status = byId("quality-state");
+  status.textContent = statusLabels[quality.status] || quality.status;
+  status.dataset.state = quality.status;
+  byId("quality-metrics").textContent = number(quality.metric_source_count);
+  byId("quality-imports").textContent = number(quality.source_import_count);
+  const diagnostic = quality.diagnostics;
+  const reviewCount = diagnostic.suspect_records + diagnostic.invalid_records
+    + diagnostic.duplicate_candidates + diagnostic.sleep_over_24h
+    + diagnostic.latest_failed_imports + diagnostic.latest_running_imports
+    + quality.stale_metric_sources;
+  byId("quality-review").textContent = number(reviewCount);
+
+  const coverageBody = byId("quality-coverage-body");
+  const coverageEmpty = byId("quality-coverage-empty");
+  coverageEmpty.hidden = quality.coverage.length > 0;
+  coverageBody.replaceChildren(...quality.coverage.map((item) => {
+    const row = document.createElement("tr");
+    const metric = document.createElement("th");
+    metric.scope = "row";
+    const metricLabel = document.createElement("strong");
+    metricLabel.textContent = metricName(item.metric);
+    const source = document.createElement("small");
+    source.textContent = `${item.source} · ${item.cadence}`;
+    metric.append(metricLabel, source);
+    const range = document.createElement("td");
+    range.textContent = `${compactDate(item.first_date)} — ${compactDate(item.last_date)}`;
+    const days = document.createElement("td");
+    days.textContent = `${number(item.observed_days)} / ${number(item.span_days)}`;
+    const missing = document.createElement("small");
+    missing.textContent = `${number(item.missing_days)} missing`;
+    days.append(missing);
+    const density = document.createElement("td");
+    density.textContent = `${number(item.coverage_pct, 1)}%`;
+    const freshness = document.createElement("td");
+    const badge = document.createElement("span");
+    badge.className = `freshness-badge ${item.freshness_status}`;
+    badge.textContent = item.freshness_status;
+    const age = document.createElement("small");
+    age.textContent = `${number(item.freshness_days)}d since last record`;
+    freshness.append(badge, age);
+    row.append(metric, range, days, density, freshness);
+    return row;
+  }));
+
+  const importBody = byId("quality-import-body");
+  const importEmpty = byId("quality-import-empty");
+  importEmpty.hidden = quality.source_runs.length > 0;
+  importBody.replaceChildren(...quality.source_runs.map((item) => {
+    const row = document.createElement("tr");
+    const source = document.createElement("th");
+    source.scope = "row";
+    source.textContent = item.source;
+    const completed = document.createElement("td");
+    completed.textContent = item.finished_at ? shortDate(item.finished_at.slice(0, 10)) : "—";
+    const durationCell = document.createElement("td");
+    durationCell.textContent = elapsed(item.duration_seconds);
+    const rate = document.createElement("td");
+    rate.textContent = item.throughput_per_second === null ? "—" : `${number(item.throughput_per_second, 1)}/s`;
+    const result = document.createElement("td");
+    result.textContent = `${number(item.normalized_count)} normalized`;
+    const detail = document.createElement("small");
+    detail.textContent = `${number(item.inserted_count)} new · ${number(item.duplicate_count)} duplicate`;
+    result.append(detail);
+    row.append(source, completed, durationCell, rate, result);
+    return row;
+  }));
+
+  const diagnostics = [
+    ["Suspect records", diagnostic.suspect_records, "review"],
+    ["Invalid records", diagnostic.invalid_records, "attention"],
+    ["Duplicate candidates", diagnostic.duplicate_candidates, "attention"],
+    ["Confirmed duplicates", diagnostic.duplicate_confirmed, "neutral"],
+    ["Rejected duplicates", diagnostic.duplicate_rejected, "neutral"],
+    ["Sleep days over 16h", diagnostic.sleep_over_16h, "review"],
+    ["Sleep days over 24h", diagnostic.sleep_over_24h, "attention"],
+    ["Latest failed imports", diagnostic.latest_failed_imports, "attention"],
+    ["Latest running imports", diagnostic.latest_running_imports, "review"],
+  ];
+  byId("quality-diagnostics").replaceChildren(...diagnostics.map(([label, value, severity]) => {
+    const item = document.createElement("div");
+    item.className = `diagnostic-item ${Number(value) ? severity : "clear"}`;
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const count = document.createElement("dd");
+    count.textContent = number(value);
+    item.append(term, count);
+    return item;
+  }));
+}
+
 function render() {
   const rows = rowsInWindow(state.payload.daily);
   renderSummary();
@@ -273,6 +385,7 @@ function render() {
   renderRecovery(rows);
   renderExercise(rows);
   renderLabs();
+  renderQuality();
   byId("latest-date").textContent = state.payload.latest_date ? `through ${shortDate(state.payload.latest_date)}` : "no data yet";
   byId("data-status").textContent = state.payload.latest_date
     ? `${rows.length} calendar days shown · source priorities applied locally`

@@ -65,6 +65,7 @@ from health.manual import (
 from health.oss_policy import PolicyError, validate_repository_policy
 from health.portability import PortabilityError, export_datasets, rebuild_database
 from health.privacy_policy import PrivacyPolicyError, validate_repository_privacy
+from health.quality import quality_report
 from health.transforms import (
     DuplicateResolutionError,
     list_duplicate_candidates,
@@ -596,6 +597,76 @@ def dashboard_command(
     except Exception as exc:
         typer.echo(f"FAIL Dashboard: {_safe_sync_error(exc)}")
         raise typer.Exit(code=1) from exc
+
+
+@app.command("coverage")
+def coverage_command(
+    details: Annotated[
+        bool,
+        typer.Option(
+            "--details/--no-details",
+            help="Show metric dates and import timestamps; never shows measurement values.",
+        ),
+    ] = False,
+    root: RootOption = Path("."),
+) -> None:
+    """Audit local dataset coverage, freshness, imports, and quality signals."""
+
+    settings = settings_for(root)
+    try:
+        _runtime_config(settings, require_directories=False)
+        with connect(settings.database, read_only=True) as connection:
+            report = quality_report(connection, now=current_time())
+    except Exception as exc:
+        typer.echo(f"FAIL Coverage: {_safe_sync_error(exc)}")
+        raise typer.Exit(code=1) from exc
+
+    diagnostics = report["diagnostics"]
+    typer.echo(
+        "PASS Coverage: "
+        f"status={report['status']} metric_sources={report['metric_source_count']} "
+        f"successful_sources={report['source_import_count']} "
+        f"stale={report['stale_metric_sources']} "
+        f"suspect={diagnostics['suspect_records']} "
+        f"invalid={diagnostics['invalid_records']} "
+        f"duplicate_candidates={diagnostics['duplicate_candidates']} "
+        f"sleep_over_24h={diagnostics['sleep_over_24h']} "
+        f"latest_failed_imports={diagnostics['latest_failed_imports']}"
+    )
+    if not details:
+        typer.echo("Run `health coverage --details` to show dates and import performance.")
+        return
+
+    typer.echo("\nMetric/source coverage (dates are local health metadata):")
+    if not report["coverage"]:
+        typer.echo("  none")
+    for row in report["coverage"]:
+        typer.echo(
+            f"  metric={row['metric']} source={row['source']} cadence={row['cadence']} "
+            f"first={row['first_date']} last={row['last_date']} "
+            f"observed_days={row['observed_days']} span_days={row['span_days']} "
+            f"missing_days={row['missing_days']} coverage={row['coverage_pct']:.1f}% "
+            f"freshness_days={row['freshness_days']} state={row['freshness_status']}"
+        )
+
+    typer.echo("\nLatest successful imports:")
+    if not report["source_runs"]:
+        typer.echo("  none")
+    for row in report["source_runs"]:
+        duration = (
+            f"{row['duration_seconds']:.1f}s" if row["duration_seconds"] is not None else "none"
+        )
+        rate = (
+            f"{row['throughput_per_second']:.1f}/s"
+            if row["throughput_per_second"] is not None
+            else "none"
+        )
+        typer.echo(
+            f"  source={row['source']} finished={_iso(row['finished_at'])} "
+            f"duration={duration} rate={rate} normalized={row['normalized_count']} "
+            f"inserted={row['inserted_count']} updated={row['updated_count']} "
+            f"duplicate={row['duplicate_count']}"
+        )
 
 
 @app.command("analyze")

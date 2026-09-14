@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from health.db import connect
+from health.quality import quality_report
 
 ASSET_ROOT = Path(__file__).parent.parent / "dashboard_assets"
 ALLOWED_RANGE_DAYS = {7, 30, 90, 365}
@@ -151,6 +152,7 @@ def dashboard_payload(database: Path, *, days: int = 365) -> dict[str, Any]:
             LIMIT 50
             """,
         )
+        quality = quality_report(connection)
     _convert_weight_units(daily, weekly, rolling)
     payload = {
         "generated_at": datetime.now().astimezone(),
@@ -161,6 +163,7 @@ def dashboard_payload(database: Path, *, days: int = 365) -> dict[str, Any]:
         "weekly": weekly,
         "rolling": rolling,
         "labs": labs,
+        "quality": quality,
     }
     return _json_value(payload)
 
