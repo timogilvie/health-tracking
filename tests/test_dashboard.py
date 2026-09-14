@@ -136,6 +136,9 @@ def test_dashboard_payload_exposes_current_trends_rollups_and_labs(
     assert payload["weekly"][0]["resistance_minutes_total"] == 55.0
     assert payload["labs"][0]["name"] == "A1C"
     assert payload["labs"][0]["numeric_value"] == 5.1
+    assert payload["quality"]["status"] == "clear"
+    assert payload["quality"]["metric_source_count"] == 8
+    assert payload["quality"]["coverage"][0]["first_date"]
 
     with pytest.raises(ValueError, match="range must be"):
         dashboard_payload(database, days=14)
@@ -152,6 +155,8 @@ def test_dashboard_payload_handles_an_empty_database(
     assert payload["rolling"] == []
     assert payload["labs"] == []
     assert all(value is None for value in payload["summary"].values())
+    assert payload["quality"]["status"] == "empty"
+    assert payload["quality"]["coverage"] == []
 
 
 def test_dashboard_server_is_loopback_only_and_sets_private_security_headers(
@@ -192,7 +197,7 @@ def test_dashboard_assets_have_accessible_sections_and_no_remote_dependencies() 
     javascript = (ASSET_ROOT / "app.js").read_text()
     stylesheet = (ASSET_ROOT / "styles.css").read_text()
 
-    for section in ("weight", "bp", "sleep", "exercise", "labs"):
+    for section in ("weight", "bp", "sleep", "exercise", "labs", "quality"):
         assert f'id="{section}"' in html
     assert "aria-live" in html
     assert "prefers-reduced-motion" in stylesheet
@@ -200,6 +205,9 @@ def test_dashboard_assets_have_accessible_sections_and_no_remote_dependencies() 
     assert "weight_lb" in javascript
     assert "weight_kg" not in javascript
     assert ">lb<" in html
+    assert 'id="quality-coverage-body"' in html
+    assert 'id="quality-import-body"' in html
+    assert "renderQuality" in javascript
 
 
 def test_dashboard_cli_validates_project_and_passes_private_server_options(

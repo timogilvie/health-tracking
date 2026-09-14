@@ -318,11 +318,39 @@ uv run health dashboard
 uv run health dashboard --no-open --port 9876
 ```
 
-The overview and dedicated Weight, BP, Sleep, Exercise, and Labs sections use the canonical daily,
-weekly, and rolling views. Switch among 7-day, 30-day, 90-day, and one-year charts in the header.
-The latest values may have different observation dates; each card states its own date. Stop the
-server with Ctrl-C. Weight remains normalized in kilograms in DuckDB and is converted to pounds at
-the dashboard presentation boundary.
+The overview and dedicated Weight, BP, Sleep, Exercise, Labs, and Data Quality sections use the
+canonical daily, weekly, and rolling views. Switch among 7-day, 30-day, 90-day, and one-year charts
+in the header. The latest values may have different observation dates; each card states its own
+date. Stop the server with Ctrl-C. Weight remains normalized in kilograms in DuckDB and is
+converted to pounds at the dashboard presentation boundary.
+
+## Dataset coverage and freshness
+
+Run the count-only audit after an import or whenever you want to check the ledger before analysis:
+
+```bash
+uv run health coverage
+```
+
+The default output reports the overall structural state, number of metric/source streams and
+successful import sources, stale streams, quality flags, unresolved duplicate candidates,
+implausible sleep rollups, and latest failed imports. It does not print health measurements,
+observation dates, source record IDs, provider error text, or raw payloads.
+
+For a local, human-readable ledger of first/last dates, observed and missing days, density, and the
+latest successful import performance, opt in to metadata details:
+
+```bash
+uv run health coverage --details
+```
+
+Treat the coverage percentage as calendar density between the first and last observed date—not as
+a data-completeness or health score. Missing daily activity or sleep can reveal a device/export
+gap, while sparse weight, blood pressure, labs, workouts, and events may be intentional. Freshness
+labels use a three-day window for daily streams and a 30-day window for periodic streams; episodic
+streams are labeled rather than judged. Dates and import timestamps are personal metadata, so keep
+detailed terminal output private. The dashboard presents the same audit locally under **Data
+Quality**.
 
 ## Architecture invariants
 

@@ -23,6 +23,7 @@
         <a href="#sleep">Sleep</a>
         <a href="#exercise">Exercise</a>
         <a href="#labs">Labs</a>
+        <a href="#quality">Quality</a>
       </nav>
       <div class="privacy-stamp">
         <span class="pulse-dot" aria-hidden="true"></span>
@@ -183,6 +184,93 @@
             <tbody id="labs-body"></tbody>
           </table>
           <p id="labs-empty" class="empty-state" hidden>No lab results yet. This section is ready when data arrives.</p>
+        </div>
+      </section>
+
+      <section class="ledger-section quality-section" id="quality" aria-labelledby="quality-title">
+        <header class="section-heading">
+          <div>
+            <span class="section-number">VI</span>
+            <p class="eyebrow">Ledger audit</p>
+            <h2 id="quality-title">Data quality</h2>
+          </div>
+          <p>Coverage describes what is present—not what ought to exist. Sparse labs, workouts, and events can be entirely expected.</p>
+        </header>
+
+        <div class="quality-register" aria-label="Data quality summary">
+          <article class="quality-state-card">
+            <span>Structural state</span>
+            <strong id="quality-state">—</strong>
+            <small>Structural signals only; never a health score.</small>
+          </article>
+          <article>
+            <span>Metric / source pairs</span>
+            <strong id="quality-metrics">—</strong>
+            <small>Distinct streams in the ledger.</small>
+          </article>
+          <article>
+            <span>Successful import sources</span>
+            <strong id="quality-imports">—</strong>
+            <small>Sources with a completed run.</small>
+          </article>
+          <article>
+            <span>Signals to review</span>
+            <strong id="quality-review">—</strong>
+            <small>Candidates, flags, or run failures.</small>
+          </article>
+        </div>
+
+        <div class="quality-grid">
+          <section class="audit-panel coverage-panel" aria-labelledby="coverage-heading">
+            <div class="audit-heading">
+              <div>
+                <p class="eyebrow">01 / density</p>
+                <h3 id="coverage-heading">Coverage by metric & source</h3>
+              </div>
+              <p>Missing means calendar days inside the observed span. It is descriptive, not a completeness verdict.</p>
+            </div>
+            <div class="table-shell audit-table-shell">
+              <table>
+                <caption class="sr-only">Coverage and freshness for every metric and source pair</caption>
+                <thead>
+                  <tr><th scope="col">Metric / source</th><th scope="col">Range</th><th scope="col">Days</th><th scope="col">Density</th><th scope="col">Freshness</th></tr>
+                </thead>
+                <tbody id="quality-coverage-body"></tbody>
+              </table>
+              <p id="quality-coverage-empty" class="empty-state" hidden>No records yet. Import a source to begin the audit.</p>
+            </div>
+          </section>
+
+          <section class="audit-panel" aria-labelledby="imports-heading">
+            <div class="audit-heading">
+              <div>
+                <p class="eyebrow">02 / throughput</p>
+                <h3 id="imports-heading">Latest successful imports</h3>
+              </div>
+              <p>Elapsed time and normalized records per second from the most recent successful run for each source.</p>
+            </div>
+            <div class="table-shell audit-table-shell">
+              <table>
+                <caption class="sr-only">Latest successful import performance by source</caption>
+                <thead>
+                  <tr><th scope="col">Source</th><th scope="col">Completed</th><th scope="col">Duration</th><th scope="col">Rate</th><th scope="col">Result</th></tr>
+                </thead>
+                <tbody id="quality-import-body"></tbody>
+              </table>
+              <p id="quality-import-empty" class="empty-state" hidden>No completed imports recorded yet.</p>
+            </div>
+          </section>
+
+          <section class="audit-panel diagnostic-panel" aria-labelledby="diagnostics-heading">
+            <div class="audit-heading">
+              <div>
+                <p class="eyebrow">03 / exceptions</p>
+                <h3 id="diagnostics-heading">Diagnostic register</h3>
+              </div>
+              <p>Counts only. Review source data before drawing conclusions from any flagged record.</p>
+            </div>
+            <dl id="quality-diagnostics" class="diagnostic-register"></dl>
+          </section>
         </div>
       </section>
     </main>
