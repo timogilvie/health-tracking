@@ -192,7 +192,7 @@ def dashboard_summary_payload(database: Path) -> dict[str, Any]:
                            ORDER BY canonical_date DESC, observed_at DESC, observation_id DESC
                        ) AS rank
                 FROM canonical_observations
-                WHERE metric IN ('weight_kg', 'resting_hr_bpm', 'hrv_rmssd_ms')
+                WHERE metric IN ('weight_kg', 'resting_hr_bpm')
             )
             WHERE rank = 1
             """,
@@ -202,13 +202,23 @@ def dashboard_summary_payload(database: Path) -> dict[str, Any]:
             name, unit, multiplier = {
                 "weight_kg": ("weight", "lb", KG_TO_LB),
                 "resting_hr_bpm": ("resting_hr", "bpm", 1),
-                "hrv_rmssd_ms": ("hrv", "ms", 1),
             }[metric]
             summary[name] = {
                 "value": float(row["value"]) * multiplier,
                 "unit": unit,
                 "date": row["canonical_date"],
             }
+        hrv = connection.execute(
+            """
+            SELECT local_date, hrv_rmssd_ms
+            FROM daily_health
+            WHERE hrv_rmssd_ms IS NOT NULL
+            ORDER BY local_date DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        if hrv:
+            summary["hrv"] = {"value": hrv[1], "unit": "ms", "date": hrv[0]}
         pressure = connection.execute(
             """
             SELECT local_date, preferred_systolic_mmhg, preferred_diastolic_mmhg

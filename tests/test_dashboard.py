@@ -179,6 +179,34 @@ def test_dashboard_progressive_payloads_render_summary_before_heavier_data(
     assert set(quality) == {"generated_at", "quality"}
 
 
+def test_dashboard_summary_uses_canonical_sleep_hrv_without_an_observation(
+    tmp_path: Path,
+    project_root: Path,
+) -> None:
+    database = initialized_database(tmp_path, project_root)
+    with connect(database) as connection:
+        oura = connection.execute(
+            "INSERT INTO sources (name, source_type) VALUES ('oura', 'api') RETURNING source_id"
+        ).fetchone()[0]
+        connection.execute(
+            """
+            INSERT INTO sleep_sessions (
+                sleep_date, started_at, ended_at, total_sleep_seconds,
+                average_hrv_rmssd_ms, source_id, source_record_id,
+                raw_file, transform_version
+            ) VALUES (
+                '2026-09-10', '2026-09-10T03:00:00Z', '2026-09-10T10:30:00Z',
+                27000, 48, ?, 'sleep-hrv-1', 'raw/sleep-hrv-1.json', 'fixture-v1'
+            )
+            """,
+            [oura],
+        )
+
+    summary = dashboard_summary_payload(database)["summary"]
+
+    assert summary["hrv"] == {"value": 48.0, "unit": "ms", "date": "2026-09-10"}
+
+
 def test_dashboard_payload_handles_an_empty_database(
     tmp_path: Path,
     project_root: Path,
