@@ -4,6 +4,11 @@ A local-first longitudinal personal health data platform. It preserves immutable
 responses, normalizes them into DuckDB with complete provenance, links duplicates without
 deleting originals, and exports portable analytical datasets.
 
+This project is licensed under Apache-2.0 and is being prepared for a possible public release.
+Release readiness does not mean the repository or any package has been approved for publication.
+The distributable core excludes credentials, provider application registrations, real health
+data, trademarks, and any hosted-service layer. See [SUPPORT.md](SUPPORT.md) before using it.
+
 ## Development
 
 Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
@@ -27,6 +32,33 @@ artifacts. This scans tracked and staged files only; it never reads ignored priv
 ```bash
 uv run health privacy-check
 ```
+
+The privacy check scans current tracked content and full Git history. A passing scan reduces the
+risk of accidental disclosure but is not a substitute for reviewing repository visibility and
+release artifacts.
+
+## Offline rebuild and portable exports
+
+Rebuild a separate database from verified immutable raw artifacts without provider credentials or
+network requests. Existing targets are never overwritten:
+
+```bash
+uv run health rebuild --target ./data/health.rebuilt.duckdb
+```
+
+Export nine canonical and analytical datasets in Parquet or CSV format. Export directories contain
+private health data, use restrictive permissions, and are ignored when kept under `data/exports/`:
+
+```bash
+uv run health export datasets --format parquet
+uv run health export datasets --format csv --output ./data/exports/csv-snapshot
+```
+
+Maintainers can prove the fixture-only path from initialization through raw replay and both export
+formats with `bash scripts/clean-clone-smoke.sh`. Governance, reporting, privacy boundaries, and
+compatibility are documented in [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md),
+[docs/security-and-privacy.md](docs/security-and-privacy.md), and
+[docs/releases.md](docs/releases.md).
 
 ## Oura authorization
 
@@ -187,6 +219,12 @@ The XML parser processes one element at a time and imports selected body measure
 cardiovascular readings, activity, sleep stages, and workouts. Stable source-record identities
 make repeat imports safe. Apple provenance—including source app, version, device, timestamps,
 metadata, and workout/correlation identity—is retained for cross-source reconciliation.
+
+Apple Health exports sleep as atomic stage intervals, sometimes with overlapping copies from
+multiple apps. The raw intervals remain unchanged, while analytical views merge overlapping time
+into episodes, assign an overnight episode to its ending (wake) date, and count each minute once
+per duration dimension. `health doctor` reports count-only sleep plausibility diagnostics without
+printing dates or measurements.
 
 Reconcile direct-vendor records with Apple Health copies after importing:
 

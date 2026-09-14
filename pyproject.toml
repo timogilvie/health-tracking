@@ -8,7 +8,8 @@ version = "0.1.0"
 description = "Local-first longitudinal personal health data platform"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "Tim Ogilvie" }]
 dependencies = [
   "duckdb>=1.4,<2",
@@ -21,11 +22,18 @@ dependencies = [
   "typer>=0.16,<1",
 ]
 
+[project.urls]
+Repository = "https://github.com/timogilvie/health-tracking"
+Issues = "https://github.com/timogilvie/health-tracking/issues"
+
 [project.scripts]
 health = "health.cli:app"
 
 [dependency-groups]
 dev = [
+  "cyclonedx-bom>=7.3.1",
+  "pip-audit>=2.10.1",
+  "pip-licenses>=5.5.5",
   "pytest>=8.4,<9",
   "pytest-cov>=6,<8",
   "ruff>=0.12,<1",

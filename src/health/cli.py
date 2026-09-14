@@ -63,6 +63,7 @@ from health.manual import (
     record_manual_workout,
 )
 from health.oss_policy import PolicyError, validate_repository_policy
+from health.portability import PortabilityError, export_datasets, rebuild_database
 from health.privacy_policy import PrivacyPolicyError, validate_repository_privacy
 from health.transforms import (
     DuplicateResolutionError,
@@ -82,6 +83,7 @@ import_app = typer.Typer(no_args_is_help=True, help="Import provider export file
 workout_app = typer.Typer(no_args_is_help=True, help="Record manual workouts.")
 duplicates_app = typer.Typer(no_args_is_help=True, help="Reconcile and review duplicate links.")
 event_app = typer.Typer(no_args_is_help=True, help="Record contextual health events.")
+export_app = typer.Typer(no_args_is_help=True, help="Export portable analytical datasets.")
 app.add_typer(auth_app, name="auth")
 app.add_typer(withings_app, name="withings")
 app.add_typer(oura_app, name="oura")
@@ -90,6 +92,7 @@ app.add_typer(import_app, name="import")
 app.add_typer(workout_app, name="workout")
 app.add_typer(duplicates_app, name="duplicates")
 app.add_typer(event_app, name="event")
+app.add_typer(export_app, name="export")
 RootOption = Annotated[
     Path,
     typer.Option(
@@ -242,6 +245,7 @@ def _safe_sync_error(error: Exception) -> str:
         OuraAPIError,
         OuraOAuthError,
         OuraPayloadError,
+        PortabilityError,
         RawStorageError,
         RetryableIngestionError,
         SecretStoreError,
@@ -477,6 +481,21 @@ def doctor(root: RootOption = Path(".")) -> None:
                         "current" if priorities_current else "run `health init`",
                     )
                 )
+                over_24_hours, over_16_hours = connection.execute(
+                    """
+                    SELECT
+                        COUNT(*) FILTER (WHERE total_sleep_minutes > 24 * 60),
+                        COUNT(*) FILTER (WHERE total_sleep_minutes > 16 * 60)
+                    FROM canonical_sleep_daily
+                    """
+                ).fetchone()
+                checks.append(
+                    (
+                        "sleep rollups",
+                        over_24_hours == 0,
+                        f"over_24h={over_24_hours}, review_over_16h={over_16_hours}",
+                    )
+                )
         checks.append(("database", not pending and not drift, f"pending={pending}, drift={drift}"))
     except (MigrationError, OSError) as exc:
         checks.append(("database", False, str(exc)))
@@ -485,6 +504,67 @@ def doctor(root: RootOption = Path(".")) -> None:
         typer.echo(f"{'PASS' if passed else 'FAIL'} {name}: {detail}")
     if not all(passed for _, passed, _ in checks):
         raise typer.Exit(code=1)
+
+
+@app.command("rebuild")
+def rebuild_command(
+    target: Annotated[
+        Path | None,
+        typer.Option(
+            dir_okay=False,
+            resolve_path=True,
+            help="New DuckDB path; defaults to data/health.rebuilt.duckdb.",
+        ),
+    ] = None,
+    root: RootOption = Path("."),
+) -> None:
+    """Rebuild a new database offline from verified immutable raw artifacts."""
+
+    settings = settings_for(root)
+    destination = target or settings.database.with_name("health.rebuilt.duckdb")
+    try:
+        report = rebuild_database(settings, destination)
+    except (OSError, ValueError, duckdb.Error, PortabilityError) as exc:
+        typer.echo(f"FAIL Rebuild: {_safe_sync_error(exc)}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        "PASS Rebuild: "
+        f"database={report.database} raw={report.raw_artifacts} "
+        f"normalized={report.normalized} inserted={report.inserted} "
+        f"updated={report.updated} duplicate={report.duplicate} "
+        f"skipped_parents={report.skipped_parent_archives}"
+    )
+
+
+@export_app.command("datasets")
+def export_datasets_command(
+    format_name: Annotated[
+        str,
+        typer.Option("--format", help="Portable format: parquet or csv."),
+    ] = "parquet",
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            file_okay=False,
+            resolve_path=True,
+            help="New output directory; defaults under data/exports/.",
+        ),
+    ] = None,
+    root: RootOption = Path("."),
+) -> None:
+    """Export canonical and analytical views without printing health values."""
+
+    settings = settings_for(root)
+    destination = output or settings.exports / f"datasets-{current_time():%Y%m%dT%H%M%SZ}"
+    try:
+        report = export_datasets(settings.database, destination, format_name=format_name)
+    except (OSError, duckdb.Error, PortabilityError) as exc:
+        typer.echo(f"FAIL Dataset export: {_safe_sync_error(exc)}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        f"PASS Dataset export: output={report.output} "
+        f"format={report.format} files={report.files}"
+    )
 
 
 @app.command("dashboard")
@@ -579,7 +659,8 @@ def privacy_check(root: RootOption = Path(".")) -> None:
     typer.echo(
         "PASS privacy: "
         f"{report.tracked_files} tracked file(s), "
-        f"{report.text_files_scanned} text file(s) scanned"
+        f"{report.text_files_scanned} text file(s) scanned, "
+        f"{report.history_blobs_scanned} historical blob path(s) scanned"
     )
 
 

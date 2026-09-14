@@ -300,6 +300,9 @@ def test_canonical_views_and_daily_rollup_select_without_deleting(database: Path
             "SELECT * FROM daily_health WHERE local_date = '2026-09-10'"
         ).fetchone()
         columns = [column[0] for column in connection.description]
+        sleep_source = connection.execute(
+            "SELECT source_name FROM canonical_sleep_daily WHERE local_date = '2026-09-10'"
+        ).fetchone()[0]
         base_counts = (
             connection.execute("SELECT count(*) FROM observations").fetchone()[0],
             connection.execute("SELECT count(*) FROM blood_pressure").fetchone()[0],
@@ -338,4 +341,135 @@ def test_canonical_views_and_daily_rollup_select_without_deleting(database: Path
     assert row["cardio_minutes"] == 35.0
     assert row["alcohol_units"] == 2.0
     assert row["event_types"] == "alcohol"
+    assert sleep_source == "oura"
     assert base_counts == (9, 4, 4)
+
+
+def test_apple_sleep_intervals_are_merged_and_assigned_to_episode_wake_date(
+    database: Path,
+) -> None:
+    with connect(database) as connection:
+        apple = _source(connection, "apple_health")
+        rows = [
+            (
+                "in-bed",
+                "2026-09-10",
+                "2026-09-09T22:00:00-04:00",
+                "2026-09-10T06:30:00-04:00",
+                30600,
+                None,
+                None,
+                None,
+                None,
+                None,
+                "InBed",
+                "Eight Sleep",
+            ),
+            (
+                "core-one",
+                "2026-09-09",
+                "2026-09-09T22:30:00-04:00",
+                "2026-09-09T23:30:00-04:00",
+                None,
+                3600,
+                None,
+                3600,
+                None,
+                None,
+                "AsleepCore",
+                "Eight Sleep",
+            ),
+            (
+                "core-overlap",
+                "2026-09-10",
+                "2026-09-09T23:00:00-04:00",
+                "2026-09-10T01:30:00-04:00",
+                None,
+                9000,
+                None,
+                9000,
+                None,
+                None,
+                "AsleepCore",
+                "Another App",
+            ),
+            (
+                "deep",
+                "2026-09-10",
+                "2026-09-10T01:30:00-04:00",
+                "2026-09-10T03:00:00-04:00",
+                None,
+                5400,
+                None,
+                None,
+                5400,
+                None,
+                "AsleepDeep",
+                "Eight Sleep",
+            ),
+            (
+                "rem",
+                "2026-09-10",
+                "2026-09-10T03:00:00-04:00",
+                "2026-09-10T06:00:00-04:00",
+                None,
+                10800,
+                None,
+                None,
+                None,
+                10800,
+                "AsleepREM",
+                "Eight Sleep",
+            ),
+            (
+                "awake",
+                "2026-09-10",
+                "2026-09-10T06:00:00-04:00",
+                "2026-09-10T06:30:00-04:00",
+                None,
+                None,
+                1800,
+                None,
+                None,
+                None,
+                "Awake",
+                "Eight Sleep",
+            ),
+        ]
+        connection.executemany(
+            """
+            INSERT INTO sleep_sessions (
+                source_record_id, sleep_date, started_at, ended_at,
+                time_in_bed_seconds, total_sleep_seconds, awake_seconds,
+                light_seconds, deep_seconds, rem_seconds, source_id,
+                raw_file, transform_version, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'fixture-v1', ?)
+            """,
+            [
+                (
+                    *row[:10],
+                    apple,
+                    f"raw/{row[0]}.xml",
+                    {
+                        "apple_health_sleep_stage": row[10],
+                        "apple_health": {"source_name": row[11]},
+                    },
+                )
+                for row in rows
+            ],
+        )
+
+        base_count = connection.execute("SELECT count(*) FROM sleep_sessions").fetchone()[0]
+        daily = connection.execute(
+            """
+            SELECT local_date, total_sleep_minutes, time_in_bed_minutes,
+                   awake_minutes, light_sleep_minutes, deep_sleep_minutes,
+                   rem_sleep_minutes
+            FROM canonical_sleep_daily
+            """
+        ).fetchall()
+
+    assert base_count == len(rows)
+    assert daily == [
+        (date(2026, 9, 10), 450.0, 510.0, 30.0, 180.0, 90.0, 180.0)
+    ]
